@@ -18,6 +18,8 @@ const state = {
   selectedId: null,
   seq: 0,
   poll: null,
+  batch: false,         // single vs batch mode
+  batchItems: [],       // [{url,title,duration,thumbnail,uploader,checked}]
 };
 
 let player = null, ytReady = false, playerReady = false;
@@ -500,6 +502,7 @@ function toggleBitrate(fmt) {
 
 /* ---------- go ---------- */
 $("#goBtn").addEventListener("click", async () => {
+  if (state.batch) return runBatch();
   if (!state.info) return;
   toggleSpin("#goBtn", true);
   try {
@@ -556,6 +559,143 @@ function renderFiles(files) {
   });
 }
 $("#resClose").addEventListener("click", () => { $("#result").hidden = true; });
+
+/* ---------- batch mode (playlists / channels / many links) ---------- */
+$$("#modeTabs button").forEach(b => b.addEventListener("click", () => setTab(b.dataset.tab)));
+
+function setTab(tab) {
+  state.batch = (tab === "batch");
+  $$("#modeTabs button").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
+  $(".mt-glide").style.transform = state.batch ? "translateX(100%)" : "translateX(0)";
+  $("#batchInput").hidden = !state.batch;
+  $("#loadBtn").style.display = state.batch ? "none" : "";
+  const sv = $("#singleView"), bv = $("#batchView");
+  if (sv) sv.hidden = state.batch;
+  if (bv) bv.hidden = !state.batch;
+  // hide clipping-only "merge" group + region preview button in batch
+  $$('.opt-group[data-show]').forEach(g => {
+    if (g.dataset.show.includes("both") && g.querySelector("#mergeSeg")) g.style.display = state.batch ? "none" : "";
+  });
+  updateGoLabel();
+}
+
+function updateGoLabel() {
+  const lbl = $(".btn-label", $("#goBtn"));
+  if (!state.batch) { lbl.textContent = "Convert & Download"; return; }
+  const n = state.batchItems.filter(i => i.checked).length;
+  lbl.textContent = `Download ${n} item${n === 1 ? "" : "s"}`;
+}
+
+$("#fetchBtn").addEventListener("click", fetchBatch);
+$("#batchUrls").addEventListener("keydown", e => { if (e.key === "Enter" && e.ctrlKey) fetchBatch(); });
+
+async function fetchBatch() {
+  const lines = ($("#batchUrls").value + "\n" + $("#url").value)
+    .split(/[\n,\s]+/).map(s => s.trim()).filter(s => /^https?:\/\//i.test(s));
+  if (!lines.length) { toast("Add some links", "Paste one or more links (one per line), or a playlist / channel URL."); return; }
+  toggleSpin("#fetchBtn", true);
+  try {
+    const r = await api("/api/batch_info", { urls: [...new Set(lines)] });
+    state.batchItems = (r.items || []).map(it => ({ ...it, checked: true }));
+    renderBatchItems();
+    $("#studio").hidden = false;
+    setTab("batch");
+    $("#selAll").checked = true;
+    $("#studio").scrollIntoView({ behavior: "smooth", block: "start" });
+    if (!state.batchItems.length) toast("Nothing found", "Couldn't read any media from those links.");
+    if (r.truncated) toast("Large list trimmed", `Showing the first ${r.count} items.`);
+    if (r.errors && r.errors.length) toast("Some links were skipped", r.errors.map(e => e.error).join(" · ").slice(0, 140));
+  } catch (e) { toast("Couldn't fetch the list", e.message); }
+  finally { toggleSpin("#fetchBtn", false); }
+}
+
+function renderBatchItems() {
+  const ul = $("#batchItems"); ul.innerHTML = "";
+  state.batchItems.forEach(it => {
+    const li = document.createElement("li");
+    li.innerHTML = `<input type="checkbox" ${it.checked ? "checked" : ""}>
+      <div class="bi-thumb">${it.thumbnail ? `<img src="${it.thumbnail}" loading="lazy">` : ""}</div>
+      <div class="bi-meta">
+        <div class="bi-title">${escapeHtml(it.title || "(untitled)")}</div>
+        <div class="bi-sub muted small">${[it.uploader, it.duration ? fmtTime(it.duration) : ""].filter(Boolean).join(" · ")}</div>
+      </div>`;
+    li.querySelector("input").addEventListener("change", e => { it.checked = e.target.checked; updateGoLabel(); syncSelAll(); });
+    ul.appendChild(li);
+  });
+  updateGoLabel();
+}
+function syncSelAll() {
+  const all = state.batchItems.length && state.batchItems.every(i => i.checked);
+  $("#selAll").checked = all;
+}
+$("#selAll").addEventListener("change", e => {
+  state.batchItems.forEach(i => i.checked = e.target.checked);
+  renderBatchItems();
+});
+
+async function runBatch() {
+  const items = state.batchItems.filter(i => i.checked).map(i => ({ url: i.url, title: i.title }));
+  if (!items.length) { toast("Nothing selected", "Tick at least one item to download."); return; }
+  toggleSpin("#goBtn", true);
+  try {
+    const payload = {
+      items, mode: state.mode,
+      audioFormat: state.audioFormat, audioBitrate: state.audioBitrate,
+      videoFormat: state.videoFormat, videoBitrate: state.videoBitrate,
+      videoQuality: state.videoQuality,
+    };
+    const { batch_id } = await api("/api/batch_process", payload);
+    showResult();
+    pollBatch(batch_id);
+  } catch (e) { alert(e.message); toggleSpin("#goBtn", false); }
+}
+
+function pollBatch(bid) {
+  clearInterval(state.poll);
+  state.poll = setInterval(async () => {
+    let b; try { b = await (await fetch(`/api/batch_progress/${bid}`)).json(); } catch { return; }
+    const pct = b.total ? Math.round(b.done / b.total * 100) : 0;
+    $("#resBar").style.width = pct + "%";
+    renderBatchQueue(b);
+    if (b.status === "done") {
+      clearInterval(state.poll);
+      $("#resBar").style.width = "100%"; $("#resBar").classList.add("done");
+      $("#resStage").textContent = "✓ Batch complete";
+      $("#resMsg").textContent = `${b.done} item(s) processed`;
+      $("#resClose").hidden = false; toggleSpin("#goBtn", false);
+    } else if (b.status === "error") {
+      clearInterval(state.poll);
+      $("#resStage").textContent = "✕ Failed"; $("#resMsg").textContent = b.error || "";
+      $("#resClose").hidden = false; toggleSpin("#goBtn", false);
+    } else {
+      $("#resStage").textContent = `Downloading ${b.done} / ${b.total}…`;
+      $("#resMsg").textContent = "";
+    }
+  }, 700);
+}
+
+function renderBatchQueue(b) {
+  const ul = $("#fileList"); ul.innerHTML = "";
+  if (b.zip) {
+    const li = document.createElement("li"); li.className = "zip";
+    li.innerHTML = `<div class="fi">ZIP</div>
+      <div style="flex:1;min-width:0"><div class="fname">All files (zip)</div>
+      <div class="fsize">${fmtSize(b.zip_size || 0)}</div></div>
+      <a class="dl" href="${b.zip}" download>Download all</a>`;
+    ul.appendChild(li);
+  }
+  (b.items || []).forEach(it => {
+    const li = document.createElement("li");
+    const badge = it.status === "done" ? "✓"
+      : it.status === "error" ? "✕"
+      : it.status === "downloading" ? `${Math.round(it.progress)}%` : "…";
+    li.innerHTML = `<div class="fi">${badge}</div>
+      <div style="flex:1;min-width:0"><div class="fname">${escapeHtml(it.title)}</div>
+      <div class="fsize">${escapeHtml(it.status)}${it.error ? ": " + escapeHtml(it.error) : ""}</div></div>
+      ${it.url ? `<a class="dl" href="${it.url}" download>Save</a>` : ""}`;
+    ul.appendChild(li);
+  });
+}
 
 /* ---------- prefill from Chrome extension (?u=<youtube url>) ---------- */
 (function initFromQuery() {

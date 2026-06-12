@@ -1,3 +1,35 @@
+/* ===== single / batch tabs ===== */
+.mode-tabs{position:relative;display:flex;gap:4px;margin-top:14px;padding:4px;border-radius:13px;
+  background:rgba(0,0,0,.28);border:1px solid rgba(255,255,255,.09)}
+.mode-tabs button{flex:1;position:relative;z-index:2;background:none;border:none;cursor:pointer;
+  color:#9aa0c0;font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:13.5px;padding:11px 8px;border-radius:10px;transition:color .2s}
+.mode-tabs button small{font-weight:400;font-size:11px;opacity:.8}
+.mode-tabs button.active{color:#fff}
+.mode-tabs .mt-glide{position:absolute;top:4px;bottom:4px;left:4px;width:calc(50% - 4px);border-radius:10px;z-index:1;
+  background:linear-gradient(135deg,#7c5cff,#ff5ca8);transition:transform .28s cubic-bezier(.4,1,.5,1)}
+
+#batchInput{display:flex;gap:12px;margin-top:14px;align-items:stretch}
+#batchInput textarea{flex:1;resize:vertical;min-height:70px;background:rgba(0,0,0,.28);border:1px solid rgba(255,255,255,.09);
+  color:#eef0ff;border-radius:13px;padding:12px 14px;font-size:13.5px;font-family:'Inter',sans-serif;outline:none;line-height:1.5}
+#batchInput textarea:focus{border-color:#7c5cff;box-shadow:0 0 0 3px rgba(124,92,255,.2)}
+#batchInput .btn{align-self:flex-end}
+
+/* ===== batch list ===== */
+.batch-card{padding:16px}
+.batch-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.batch-head .selall{display:flex;align-items:center;gap:8px;font-size:13px;color:#c4c9e4;cursor:pointer;font-weight:500}
+.batch-head input[type=checkbox]{width:16px;height:16px;accent-color:#7c5cff;cursor:pointer}
+.batch-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;max-height:460px;overflow-y:auto}
+.batch-list li{display:flex;align-items:center;gap:12px;padding:9px 11px;border-radius:11px;
+  background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08)}
+.batch-list li:hover{background:rgba(255,255,255,.07)}
+.batch-list input[type=checkbox]{width:17px;height:17px;flex:none;accent-color:#7c5cff;cursor:pointer}
+.batch-list .bi-thumb{flex:none;width:64px;height:38px;border-radius:7px;overflow:hidden;background:rgba(0,0,0,.4)}
+.batch-list .bi-thumb img{width:100%;height:100%;object-fit:cover}
+.batch-list .bi-meta{flex:1;min-width:0}
+.batch-list .bi-title{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.batch-list .bi-sub{margin-top:2px}
+
 /* ===== adaptive-UI: player note overlay + gentle toast ===== */
 .player-note{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
   gap:9px;text-align:center;padding:22px;background:rgba(7,7,17,.55);backdrop-filter:blur(2px);color:#eef0ff}

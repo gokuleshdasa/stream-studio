@@ -34,13 +34,28 @@
       </button>
     </div>
     <div id="loadErr" class="err" hidden></div>
+
+    <div class="mode-tabs" id="modeTabs">
+      <span class="mt-glide"></span>
+      <button data-tab="single" class="active">🎬 Single &nbsp;<small>preview + clip</small></button>
+      <button data-tab="batch">🗂️ Batch &nbsp;<small>playlist · channel · many links</small></button>
+    </div>
+
+    <div id="batchInput" hidden>
+      <textarea id="batchUrls" rows="3" spellcheck="false"
+        placeholder="Paste links here — one per line. A playlist or channel URL is expanded automatically."></textarea>
+      <button id="fetchBtn" class="btn primary">
+        <span class="btn-label">Fetch list</span><span class="spinner" hidden></span>
+      </button>
+    </div>
   </section>
 
   <!-- Media + controls -->
   <section id="studio" class="studio" hidden>
 
-    <!-- LEFT: preview + timeline -->
+    <!-- LEFT: single (preview + timeline) OR batch list -->
     <div class="col-left">
+      <div id="singleView">
       <div class="glass media-card">
         <div id="player" class="player"></div>
         <div class="meta">
@@ -80,6 +95,17 @@
         </div>
 
         <ul id="regionList" class="regions"></ul>
+      </div>
+      </div><!-- /singleView -->
+
+      <div id="batchView" hidden>
+        <div class="glass batch-card">
+          <div class="batch-head">
+            <label class="selall"><input type="checkbox" id="selAll" checked> Select all</label>
+            <span id="batchCount" class="muted small">0 items</span>
+          </div>
+          <ul id="batchItems" class="batch-list"></ul>
+        </div>
       </div>
     </div>
 

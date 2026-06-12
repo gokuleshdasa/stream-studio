@@ -401,6 +401,214 @@ def api_file(job_id, fname):
     return send_file(target, as_attachment=True, download_name=fname)
 
 
+# ===================== BATCH: playlists / channels / many URLs ==============
+BATCH = {}
+
+
+def set_batch(bid, **kw):
+    with JOBS_LOCK:
+        BATCH.setdefault(bid, {})
+        BATCH[bid].update(kw)
+
+
+def get_batch(bid):
+    with JOBS_LOCK:
+        return dict(BATCH.get(bid, {}))
+
+
+def _thumb(e):
+    if e.get("thumbnail"):
+        return e["thumbnail"]
+    ts = e.get("thumbnails") or []
+    return ts[-1].get("url") if ts else None
+
+
+def _flat_entries(url, cap=200):
+    """Quickly enumerate a playlist/channel (or pass through a single video)."""
+    opts = {"quiet": True, "no_warnings": True, "extract_flat": "in_playlist",
+            "skip_download": True, **EJS_OPTS}
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        info = ydl.extract_info(url, download=False)
+    if info.get("entries") is not None:
+        items = []
+        for e in info["entries"]:
+            if not e:
+                continue
+            items.append({"url": e.get("url") or e.get("webpage_url") or e.get("id"),
+                          "title": e.get("title") or "(untitled)",
+                          "duration": e.get("duration"), "thumbnail": _thumb(e),
+                          "uploader": e.get("uploader") or info.get("uploader") or info.get("title")})
+            if len(items) >= cap:
+                break
+        return {"items": items}
+    return {"items": [{"url": info.get("webpage_url") or url, "title": info.get("title"),
+                       "duration": info.get("duration"), "thumbnail": _thumb(info),
+                       "uploader": info.get("uploader")}]}
+
+
+@app.route("/api/batch_info", methods=["POST"])
+def api_batch_info():
+    data = request.get_json(force=True)
+    urls = data.get("urls")
+    if isinstance(urls, str):
+        urls = [urls]
+    if not urls and data.get("url"):
+        urls = [data["url"]]
+    urls = [u.strip() for u in (urls or []) if u and u.strip()]
+    if not urls:
+        return jsonify({"error": "No URLs provided"}), 400
+    items, errors, truncated = [], [], False
+    CAP_TOTAL = 300
+    for u in urls:
+        try:
+            items.extend(_flat_entries(u, cap=200)["items"])
+        except Exception as e:
+            errors.append({"url": u, "error": str(e)[:140]})
+        if len(items) >= CAP_TOTAL:
+            items, truncated = items[:CAP_TOTAL], True
+            break
+    seen, deduped = set(), []
+    for it in items:
+        k = it.get("url")
+        if not k or k in seen:
+            continue
+        seen.add(k)
+        deduped.append(it)
+    return jsonify({"items": deduped, "count": len(deduped),
+                    "truncated": truncated, "errors": errors})
+
+
+@app.route("/api/batch_process", methods=["POST"])
+def api_batch_process():
+    data = request.get_json(force=True)
+    items = data.get("items") or []
+    if not items:
+        return jsonify({"error": "No items selected"}), 400
+    bid = uuid.uuid4().hex[:12]
+    set_batch(bid, status="queued", done=0, total=len(items), zip=None, error=None,
+              items=[{"title": it.get("title") or "item", "url": it.get("url"),
+                      "status": "queued", "progress": 0, "file": None, "error": None}
+                     for it in items])
+    threading.Thread(target=run_batch, args=(bid, data), daemon=True).start()
+    return jsonify({"batch_id": bid})
+
+
+@app.route("/api/batch_progress/<bid>")
+def api_batch_progress(bid):
+    b = get_batch(bid)
+    if not b:
+        return jsonify({"error": "unknown batch"}), 404
+    return jsonify(b)
+
+
+def run_batch(bid, data):
+    try:
+        _run_batch(bid, data)
+    except Exception as e:
+        set_batch(bid, status="error", error=str(e))
+
+
+def _run_batch(bid, data):
+    items = data["items"]
+    mode = data.get("mode", "audio")
+    afmt = data.get("audioFormat", "mp3"); abr = str(data.get("audioBitrate", "192"))
+    vfmt = data.get("videoFormat", "mp4"); vbr = str(data.get("videoBitrate", "original"))
+    vquality = str(data.get("videoQuality", "best"))
+
+    outdir = OUT / ("batch_" + bid)
+    if outdir.exists():
+        shutil.rmtree(outdir, ignore_errors=True)
+    outdir.mkdir(parents=True)
+    set_batch(bid, status="running")
+    rows = get_batch(bid)["items"]
+    produced = []
+
+    for i, it in enumerate(items):
+        rows[i]["status"] = "downloading"
+        set_batch(bid, items=rows)
+
+        def prog(p, i=i):
+            rows[i]["progress"] = round(p, 1)
+            set_batch(bid, items=rows)
+
+        name = f"{i + 1:02d} - " + sanitize(it.get("title") or f"item{i + 1}")
+        try:
+            out = _fetch_and_convert(it["url"], name, mode, afmt, abr, vfmt, vbr, vquality, outdir, prog)
+            rows[i].update(status="done", progress=100, file=out.name,
+                           url=f"/api/file/batch_{bid}/{out.name}",
+                           size=out.stat().st_size)
+            produced.append(out)
+        except Exception as e:
+            rows[i].update(status="error", error=str(e)[:160])
+        set_batch(bid, items=rows, done=i + 1)
+
+    zurl, zsize = None, 0
+    if produced:
+        zip_path = outdir / "Stream Studio batch.zip"
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_STORED) as z:
+            for p in produced:
+                z.write(p, p.name)
+        zurl, zsize = f"/api/file/batch_{bid}/{zip_path.name}", zip_path.stat().st_size
+    set_batch(bid, status="done", zip=zurl, zip_size=zsize)
+
+
+def _fetch_and_convert(url, title, mode, afmt, abr, vfmt, vbr, vquality, outdir, on_prog):
+    """Download one full item and convert it (no clipping). Returns the output Path."""
+    tmp = WORK / ("b_" + uuid.uuid4().hex[:8])
+    if tmp.exists():
+        shutil.rmtree(tmp, ignore_errors=True)
+    tmp.mkdir(parents=True)
+    try:
+        if mode == "audio":
+            fmt, merge_fmt = "bestaudio/best", None
+        else:
+            fmt = (f"bestvideo[height<={vquality}]+bestaudio/best[height<={vquality}]/best"
+                   if vquality.isdigit() else "bestvideo+bestaudio/best")
+            merge_fmt = "mkv"
+
+        def hook(d):
+            if d["status"] == "downloading":
+                total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
+                done = d.get("downloaded_bytes") or 0
+                on_prog((done / total * 90) if total else 0)
+            elif d["status"] == "finished":
+                on_prog(92)
+
+        ydl_opts = {"quiet": True, "no_warnings": True, "noplaylist": True,
+                    "format": fmt, "outtmpl": str(tmp / "src.%(ext)s"),
+                    "progress_hooks": [hook], **EJS_OPTS}
+        if FFMPEG != "ffmpeg":
+            ydl_opts["ffmpeg_location"] = str(Path(FFMPEG).parent)
+        if merge_fmt:
+            ydl_opts["merge_output_format"] = merge_fmt
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.extract_info(url, download=True)
+
+        source = next(iter(sorted(tmp.glob("src.*"))), None)
+        if not source:
+            raise RuntimeError("download produced no file")
+
+        if mode == "audio":
+            out = outdir / f"{title}.{afmt}"
+            cmd = [FFMPEG, "-y", "-i", str(source), "-vn"]
+            cmd += AUDIO_CODECS.get(afmt, AUDIO_CODECS["mp3"])
+            if afmt not in LOSSLESS_AUDIO:
+                cmd += ["-b:a", f"{abr}k"]
+            cmd += [str(out)]
+        else:
+            out = outdir / f"{title}.{vfmt}"
+            cmd = video_cmd(source, out, [], [], vfmt, vbr, True, afmt, abr)
+
+        on_prog(95)
+        proc = subprocess.run(cmd, capture_output=True, text=True, creationflags=NO_WINDOW)
+        if proc.returncode != 0:
+            raise RuntimeError(f"ffmpeg failed: {proc.stderr[-400:]}")
+        on_prog(100)
+        return out
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 # ---------------------------------------------------------------------------
 def run_job(job_id, data):
     try:
