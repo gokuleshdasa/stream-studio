@@ -1,0 +1,10 @@
+# Runtime
+flask>=3.0
+yt-dlp
+
+# Tray app (Windows background mode)
+pystray
+pillow
+
+# Build tooling (to produce the .exe)
+pyinstaller

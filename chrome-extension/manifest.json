@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "Stream Studio — Send to Converter",
+  "version": "1.1.0",
+  "description": "Send the current page (YouTube, SoundCloud, Vimeo, …) to your local Stream Studio app to download, convert, clip and re-encode.",
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Send to Stream Studio"
+  },
+  "icons": { "16": "icons/icon16.png", "48": "icons/icon48.png", "128": "icons/icon128.png" },
+  "permissions": ["tabs", "storage"],
+  "host_permissions": ["*://*.youtube.com/*", "http://127.0.0.1/*", "http://localhost/*"],
+  "content_scripts": [
+    {
+      "matches": ["*://*.youtube.com/watch*", "*://*.youtube.com/shorts/*", "*://youtu.be/*"],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle"
+    }
+  ]
+}

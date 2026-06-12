@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stream Studio — Download · Clip · Convert from any site</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="bg-orbs"><span></span><span></span><span></span></div>
+
+<header class="topbar">
+  <div class="logo">
+    <div class="logo-mark"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M4 4l16 8-16 8z" fill="currentColor"/></svg></div>
+    <div><b>Stream <span style="color:var(--acc2)">Studio</span></b><small>any site · clip · convert</small></div>
+  </div>
+  <div class="badge">local · ffmpeg + yt-dlp</div>
+</header>
+
+<main class="wrap">
+
+  <!-- URL bar -->
+  <section class="glass url-card">
+    <div class="url-row">
+      <div class="input-wrap">
+        <svg class="ic" viewBox="0 0 24 24" width="18" height="18"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <input id="url" type="text" placeholder="Paste any link — YouTube, SoundCloud, Vimeo, Dailymotion, Bandcamp…" autocomplete="off" spellcheck="false">
+      </div>
+      <button id="loadBtn" class="btn primary">
+        <span class="btn-label">Load</span>
+        <span class="spinner" hidden></span>
+      </button>
+    </div>
+    <div id="loadErr" class="err" hidden></div>
+  </section>
+
+  <!-- Media + controls -->
+  <section id="studio" class="studio" hidden>
+
+    <!-- LEFT: preview + timeline -->
+    <div class="col-left">
+      <div class="glass media-card">
+        <div id="player" class="player"></div>
+        <div class="meta">
+          <h2 id="mTitle">—</h2>
+          <p id="mSub" class="muted">—</p>
+        </div>
+
+        <!-- transport -->
+        <div class="transport">
+          <button id="playBtn" class="tbtn" title="Play / Pause">▶</button>
+          <button id="stopBtn" class="tbtn" title="Stop">■</button>
+          <span id="curTime" class="tt">0:00</span>
+          <span class="tt muted">/</span>
+          <span id="durTime" class="tt muted">0:00</span>
+          <span class="grow"></span>
+          <button id="markBtn" class="btn ghost sm">＋ Mark region at playhead</button>
+        </div>
+
+        <!-- timeline editor -->
+        <div class="timeline-block">
+          <div class="ruler" id="ruler"></div>
+          <div class="track-lane" id="trackLane">
+            <div class="ghost-region" id="ghostRegion" hidden></div>
+            <div class="playhead" id="playhead"></div>
+          </div>
+          <p class="muted small hint" id="tlHint">Drag across the track to mark a region (Part 1, Part 2…). Drag a block to move it, drag its edges to trim. Click a block to preview just that part.</p>
+        </div>
+
+        <!-- selected region editor -->
+        <div class="region-editor glass-in" id="regionEditor" hidden>
+          <span class="re-swatch" id="reSwatch"></span>
+          <input id="regName" class="ts wide" type="text" placeholder="Region name">
+          <label>Start <input id="tsStart" class="ts" type="text"></label>
+          <label>End <input id="tsEnd" class="ts" type="text"></label>
+          <button id="previewRegion" class="chip accent">▶ Preview</button>
+          <button id="delRegion" class="chip danger">🗑</button>
+        </div>
+
+        <ul id="regionList" class="regions"></ul>
+      </div>
+    </div>
+
+    <!-- RIGHT: options -->
+    <aside class="col-right">
+      <div class="glass opt-card">
+
+        <div class="seg" id="modeSeg">
+          <span class="seg-glide"></span>
+          <button data-mode="audio" class="active">Audio</button>
+          <button data-mode="video">Video</button>
+          <button data-mode="both">Both</button>
+        </div>
+
+        <!-- audio options -->
+        <div class="opt-group" data-show="audio video both">
+          <div class="opt-title">Audio</div>
+          <div class="field">
+            <label>Format</label>
+            <div class="pills" id="audioFmt">
+              <button class="active" data-v="mp3">MP3</button>
+              <button data-v="wav">WAV</button>
+              <button data-v="aac">AAC</button>
+              <button data-v="m4a">M4A</button>
+              <button data-v="flac">FLAC</button>
+              <button data-v="opus">Opus</button>
+              <button data-v="ogg">OGG</button>
+            </div>
+          </div>
+          <div class="field" id="abrField">
+            <label>Bitrate <small id="srcAbr" class="muted"></small></label>
+            <div class="pills" id="audioBr">
+              <button data-v="96">96k</button>
+              <button data-v="128">128k</button>
+              <button data-v="160">160k</button>
+              <button class="active" data-v="192">192k</button>
+              <button data-v="256">256k</button>
+              <button data-v="320">320k</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- video options -->
+        <div class="opt-group" data-show="video both" hidden>
+          <div class="opt-title">Video</div>
+          <div class="field">
+            <label>Container</label>
+            <div class="pills" id="videoFmt">
+              <button class="active" data-v="mp4">MP4</button>
+              <button data-v="mkv">MKV</button>
+              <button data-v="webm">WebM</button>
+            </div>
+          </div>
+          <div class="field">
+            <label>Quality</label>
+            <div class="pills" id="videoQ">
+              <button class="active" data-v="best">Best</button>
+            </div>
+          </div>
+          <div class="field">
+            <label>Video bitrate</label>
+            <div class="pills" id="videoBr">
+              <button class="active" data-v="original">Original</button>
+              <button data-v="1000">1 Mbps</button>
+              <button data-v="2500">2.5 Mbps</button>
+              <button data-v="5000">5 Mbps</button>
+              <button data-v="8000">8 Mbps</button>
+              <button data-v="16000">16 Mbps</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- both: merge/separate -->
+        <div class="opt-group" data-show="both" hidden>
+          <div class="field">
+            <label>Output</label>
+            <div class="seg small" id="mergeSeg">
+              <span class="seg-glide"></span>
+              <button data-merge="1" class="active">Merged (1 file)</button>
+              <button data-merge="0">Separate A/V</button>
+            </div>
+          </div>
+        </div>
+
+        <button id="goBtn" class="btn primary big">
+          <span class="btn-label">Convert &amp; Download</span>
+          <span class="spinner" hidden></span>
+        </button>
+      </div>
+    </aside>
+  </section>
+
+  <!-- progress / results -->
+  <section id="result" class="glass result-card" hidden>
+    <div class="res-head">
+      <div>
+        <div id="resStage" class="res-stage">Working…</div>
+        <div id="resMsg" class="muted small">—</div>
+      </div>
+      <button id="resClose" class="chip" hidden>✕ Close</button>
+    </div>
+    <div class="bar"><div id="resBar" class="bar-fill"></div></div>
+    <ul id="fileList" class="files"></ul>
+  </section>
+
+</main>
+
+<footer class="foot muted small">Runs entirely on your machine · for content you have the rights to use.</footer>
+
+<script src="https://www.youtube.com/iframe_api"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

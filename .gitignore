@@ -1,0 +1,30 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# ---- PyInstaller build output ----
+build/
+dist/
+*.spec
+
+# ---- Inno Setup output ----
+Setup/
+
+# ---- bundled third-party binaries (downloaded at build time, see BUILD.md) ----
+build_assets/ffmpeg.exe
+build_assets/deno.exe
+build_assets/*.zip
+
+# ---- app runtime data ----
+downloads/
+work/
+*.log
+
+# ---- OS / editor cruft ----
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

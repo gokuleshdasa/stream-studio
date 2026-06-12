@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  :root{--acc:#7c5cff;--acc2:#19d3da;--acc3:#ff5ca8;}
+  *{box-sizing:border-box;font-family:'Segoe UI',system-ui,sans-serif}
+  body{width:300px;margin:0;padding:16px;background:#0d0d18;color:#eef0ff}
+  .head{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+  .mark{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;color:#fff;
+    background:linear-gradient(135deg,var(--acc),var(--acc3))}
+  .head b{font-size:14px}
+  .head small{display:block;color:#9aa0c0;font-size:11px}
+  .vid{font-size:12px;color:#9aa0c0;background:#171728;border:1px solid rgba(255,255,255,.08);
+    border-radius:9px;padding:9px 11px;margin-bottom:12px;word-break:break-all;max-height:54px;overflow:hidden}
+  button{width:100%;border:none;border-radius:11px;padding:12px;color:#fff;font-size:14px;font-weight:600;
+    cursor:pointer;background:linear-gradient(135deg,var(--acc),var(--acc3))}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  button.sec{background:#1c1c30;border:1px solid rgba(255,255,255,.1);margin-top:8px;font-weight:500;font-size:12.5px}
+  .field{display:flex;gap:8px;align-items:center;margin-top:12px;font-size:12px;color:#9aa0c0}
+  .field input{flex:1;background:#171728;border:1px solid rgba(255,255,255,.1);color:#eef0ff;
+    border-radius:8px;padding:7px 9px;font-size:12px}
+  .note{font-size:11px;color:#6f7596;margin-top:12px;line-height:1.5}
+  .ok{color:#37e29a}.bad{color:#ff6b6b}
+</style>
+</head>
+<body>
+  <div class="head">
+    <div class="mark">▶</div>
+    <div><b>Stream Studio</b><small>send video to converter</small></div>
+  </div>
+
+  <div id="vid" class="vid">Checking this tab…</div>
+  <button id="send" disabled>Open in Stream Studio</button>
+  <button id="copy" class="sec">Copy URL</button>
+
+  <div class="field">
+    <span>App port</span>
+    <input id="port" type="text" value="5006">
+  </div>
+  <div class="field">
+    <span>Auto-collapse the on-video card after (seconds)</span>
+    <input id="collapseDelay" type="number" min="3" max="600" value="20">
+  </div>
+
+  <div id="updnotice" style="display:none;margin-top:12px;padding:10px 12px;border-radius:10px;
+       background:linear-gradient(135deg,rgba(124,92,255,.22),rgba(255,92,168,.18));
+       border:1px solid rgba(124,92,255,.4);font-size:12px;line-height:1.5">
+    <b style="color:#fff">Extension update available</b>
+    <div id="updtext" style="color:#cdd2ee;margin:3px 0 8px"></div>
+    <button id="updbtn" style="width:100%;padding:8px;font-size:12px">How to update →</button>
+  </div>
+
+  <div id="status" class="note"></div>
+  <div class="note">The local Stream Studio app must be running. Not on a YouTube page? Paste any URL into the app directly.</div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
