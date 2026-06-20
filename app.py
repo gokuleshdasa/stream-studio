@@ -20,7 +20,7 @@ from pathlib import Path
 # A newer yt-dlp can be unpacked into this user-writable folder; if present it
 # is loaded INSTEAD of the copy frozen inside the .exe, so the app keeps working
 # when YouTube changes without us shipping a whole new build.
-EXTENSION_VERSION = "1.1.0"  # version of the chrome-extension shipped with this app
+EXTENSION_VERSION = "1.2.0"  # version of the chrome-extension shipped with this app
 
 def _override_dir():
     base = os.environ.get("LOCALAPPDATA") or str(Path.home())
@@ -319,6 +319,48 @@ def api_version():
         "extension_version": EXTENSION_VERSION,
         "ytdlp_current": current_ytdlp(),
     })
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    return resp
+
+
+# Cache of which URLs are handled by a dedicated extractor (browser button uses this).
+_SUPPORT_CACHE = {}
+_EXTRACTORS = None
+
+
+def _url_supported(u):
+    global _EXTRACTORS
+    if not u or not re.match(r"^https?://", u):
+        return False
+    if u in _SUPPORT_CACHE:
+        return _SUPPORT_CACHE[u]
+    ok = False
+    try:
+        if _EXTRACTORS is None:
+            from yt_dlp.extractor import gen_extractor_classes
+            _EXTRACTORS = [ie for ie in gen_extractor_classes()
+                           if (ie.IE_NAME or "").lower() != "generic"]
+        for ie in _EXTRACTORS:
+            try:
+                if ie.suitable(u):
+                    ok = True
+                    break
+            except Exception:
+                pass
+    except Exception:
+        ok = False
+    if len(_SUPPORT_CACHE) > 500:
+        _SUPPORT_CACHE.clear()
+    _SUPPORT_CACHE[u] = ok
+    return ok
+
+
+@app.route("/api/supported")
+def api_supported():
+    # The browser extension calls this for the current page; if a dedicated
+    # extractor handles it, the on-page download button appears.
+    u = (request.args.get("u") or "").strip()
+    resp = jsonify({"supported": _url_supported(u)})
     resp.headers["Access-Control-Allow-Origin"] = "*"
     return resp
 

@@ -98,8 +98,18 @@ async function loadUrl() {
     const info = await api("/api/info", { url });
     state.info = info; state.duration = info.duration || 0;
     renderStudio(info);
+    if (window.__AUTO_DL) { window.__AUTO_DL = false; autoDownload(); }
   } catch (e) { err.textContent = e.message; err.hidden = false; }
   finally { toggleSpin("#loadBtn", false); }
+}
+
+/* one-click download (from the browser button: ?u=…&dl=1) — whole file, no clip */
+function autoDownload() {
+  setTab("single");
+  const mode = (state.info && state.info.media_kind === "audio") ? "audio" : "video";
+  const btn = $(`#modeSeg button[data-mode="${mode}"]`);
+  if (btn) btn.click();
+  setTimeout(() => $("#goBtn").click(), 50);
 }
 
 /* ---------- render studio ---------- */
@@ -697,12 +707,13 @@ function renderBatchQueue(b) {
   });
 }
 
-/* ---------- prefill from Chrome extension (?u=<youtube url>) ---------- */
+/* ---------- prefill from the browser extension (?u=<url>&dl=1) ---------- */
 (function initFromQuery() {
-  const u = new URLSearchParams(location.search).get("u");
+  const q = new URLSearchParams(location.search);
+  const u = q.get("u");
   if (u) {
     $("#url").value = u;
-    // wait for the YouTube IFrame API before auto-loading so the player mounts
+    window.__AUTO_DL = q.get("dl") === "1";   // one-click download from the page button
     const tryLoad = () => { loadUrl(); };
     if (ytReady) tryLoad(); else setTimeout(tryLoad, 900);
   }

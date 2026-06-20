@@ -1,8 +1,8 @@
-; Inno Setup script for Stream Studio
+﻿; Inno Setup script for Stream Studio
 ; Produces a classic "Next -> Next -> Finish" Windows installer.
 
 #define AppName "Stream Studio"
-#define AppVersion "1.1.0"
+#define AppVersion "1.2.0"
 #define AppPublisher "Stream Studio"
 #define AppExe "StreamStudio.exe"
 
