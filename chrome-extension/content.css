@@ -1,20 +1,22 @@
-/* ===== Stream Studio "Convert this video" card (above the player) ===== */
+/* ===== Stream Studio floating "Download this media" card (lower-right) ===== */
 #yts-card{
-  position:relative;
-  margin:0 0 12px 0;
+  position:fixed;
+  right:20px;
+  bottom:20px;
+  z-index:2147483000;          /* above virtually everything */
+  width:300px;
   border-radius:16px;
   overflow:hidden;
   font-family:'Roboto','Segoe UI',system-ui,sans-serif;
-  background:linear-gradient(135deg, rgba(20,20,34,.92), rgba(28,20,48,.92));
-  border:1px solid rgba(255,255,255,.08);
-  box-shadow:0 14px 40px rgba(124,92,255,.28), inset 0 1px 0 rgba(255,255,255,.06);
+  background:linear-gradient(135deg, rgba(20,20,34,.96), rgba(28,20,48,.96));
+  border:1px solid rgba(255,255,255,.10);
+  box-shadow:0 16px 44px rgba(124,92,255,.40), inset 0 1px 0 rgba(255,255,255,.06);
   backdrop-filter:blur(10px);
   opacity:0;
-  transform:translateY(-8px);
-  transition:opacity .35s ease, transform .35s ease, max-height .35s ease, margin .35s ease, padding .35s ease;
-  max-height:120px;
+  transform:translateY(10px) scale(.97);
+  transition:opacity .3s ease, transform .3s ease;
 }
-#yts-card.yts-in{ opacity:1; transform:translateY(0); }
+#yts-card.yts-in{ opacity:1; transform:translateY(0) scale(1); }
 
 #yts-card .yts-glow{
   position:absolute; inset:0; pointer-events:none;
@@ -68,14 +70,13 @@
 }
 #yts-card .yts-pill:hover{ transform:translateY(-1px); filter:brightness(1.07); }
 
-/* ===== collapsed state ===== */
+/* ===== collapsed state — shrinks to the pill, still pinned lower-right ===== */
 #yts-card.yts-collapsed{
-  max-height:46px;
+  width:auto;
   background:transparent;
   border-color:transparent;
   box-shadow:none;
   backdrop-filter:none;
-  margin-bottom:10px;
 }
 #yts-card.yts-collapsed .yts-glow,
 #yts-card.yts-collapsed .yts-row{ display:none; }
