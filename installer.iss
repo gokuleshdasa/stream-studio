@@ -2,7 +2,7 @@
 ; Produces a classic "Next -> Next -> Finish" Windows installer.
 
 #define AppName "Stream Studio"
-#define AppVersion "1.2.0"
+#define AppVersion "1.3.0"
 #define AppPublisher "Stream Studio"
 #define AppExe "StreamStudio.exe"
 

@@ -1,83 +1,47 @@
-/* ===== Stream Studio floating "Download this media" card (lower-right) ===== */
-#yts-card{
-  position:fixed;
-  right:20px;
-  bottom:20px;
-  z-index:2147483000;          /* above virtually everything */
-  width:300px;
-  border-radius:16px;
-  overflow:hidden;
+/* ===== Stream Studio — injected UI ===== */
+
+/* compact "Download this page" pill, lower-right (supported sites) */
+#ss-pill{
+  position:fixed; right:18px; bottom:18px; z-index:2147483000;
+  display:flex; align-items:center; gap:6px;
   font-family:'Roboto','Segoe UI',system-ui,sans-serif;
-  background:linear-gradient(135deg, rgba(20,20,34,.96), rgba(28,20,48,.96));
-  border:1px solid rgba(255,255,255,.10);
-  box-shadow:0 16px 44px rgba(124,92,255,.40), inset 0 1px 0 rgba(255,255,255,.06);
-  backdrop-filter:blur(10px);
-  opacity:0;
-  transform:translateY(10px) scale(.97);
-  transition:opacity .3s ease, transform .3s ease;
+  opacity:0; transform:translateY(10px); transition:opacity .25s ease, transform .25s ease;
 }
-#yts-card.yts-in{ opacity:1; transform:translateY(0) scale(1); }
-
-#yts-card .yts-glow{
-  position:absolute; inset:0; pointer-events:none;
-  background:radial-gradient(120% 140% at 0% 0%, rgba(124,92,255,.30), transparent 55%),
-             radial-gradient(120% 140% at 100% 100%, rgba(255,92,168,.22), transparent 55%);
-}
-#yts-card .yts-row{
-  position:relative;
-  display:flex; align-items:center; gap:14px;
-  padding:13px 14px;
-}
-#yts-card .yts-badge{
-  flex:none; display:grid; place-items:center;
-  width:38px; height:38px; border-radius:11px;
-  color:#fff; font-size:14px;
+#ss-pill.in{ opacity:1; transform:translateY(0); }
+#ss-pill .ss-pill-btn{
+  display:flex; align-items:center; gap:8px; cursor:pointer; border:none;
+  color:#fff; font-size:13.5px; font-weight:600; padding:11px 18px; border-radius:30px;
   background:linear-gradient(135deg,#7c5cff,#ff5ca8);
-  box-shadow:0 6px 16px rgba(124,92,255,.5);
-}
-#yts-card .yts-badge.sm{ width:20px; height:20px; border-radius:50%; font-size:9px; box-shadow:none; background:rgba(255,255,255,.25); }
-#yts-card .yts-text{ flex:1; min-width:0; }
-#yts-card .yts-title{ color:#fff; font-size:15px; font-weight:700; line-height:1.2; }
-#yts-card .yts-sub{ color:#a7adc9; font-size:12px; margin-top:2px; }
-
-#yts-card .yts-cta{
-  flex:none; cursor:pointer; border:none;
-  color:#fff; font-size:13.5px; font-weight:600;
-  padding:10px 18px; border-radius:11px;
-  background:linear-gradient(135deg,#7c5cff,#ff5ca8);
-  box-shadow:0 8px 20px rgba(124,92,255,.45);
-  transition:transform .15s, box-shadow .2s, filter .2s;
-}
-#yts-card .yts-cta:hover{ transform:translateY(-1px); filter:brightness(1.07); box-shadow:0 12px 26px rgba(124,92,255,.6); }
-#yts-card .yts-x{
-  flex:none; cursor:pointer; width:30px; height:30px; border-radius:9px;
-  border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.05);
-  color:#a7adc9; font-size:13px; transition:.15s;
-}
-#yts-card .yts-x:hover{ background:rgba(255,255,255,.12); color:#fff; }
-
-/* collapsed pill (hidden while expanded) */
-#yts-card .yts-pill{
-  display:none;
-  position:relative;
-  align-items:center; gap:7px;
-  margin:0; cursor:pointer; border:none;
-  color:#fff; font-size:13px; font-weight:600;
-  padding:9px 15px; border-radius:30px;
-  background:linear-gradient(135deg,#7c5cff,#ff5ca8);
-  box-shadow:0 8px 20px rgba(124,92,255,.45);
+  box-shadow:0 10px 26px rgba(124,92,255,.5);
   transition:transform .15s, filter .2s;
 }
-#yts-card .yts-pill:hover{ transform:translateY(-1px); filter:brightness(1.07); }
-
-/* ===== collapsed state — shrinks to the pill, still pinned lower-right ===== */
-#yts-card.yts-collapsed{
-  width:auto;
-  background:transparent;
-  border-color:transparent;
-  box-shadow:none;
-  backdrop-filter:none;
+#ss-pill .ss-pill-btn:hover{ transform:translateY(-1px); filter:brightness(1.08); }
+#ss-pill .ss-pill-x{
+  width:26px; height:26px; border-radius:50%; cursor:pointer; font-size:11px; line-height:1;
+  border:none; color:#fff; background:rgba(0,0,0,.45); transition:.15s;
 }
-#yts-card.yts-collapsed .yts-glow,
-#yts-card.yts-collapsed .yts-row{ display:none; }
-#yts-card.yts-collapsed .yts-pill{ display:inline-flex; }
+#ss-pill .ss-pill-x:hover{ background:rgba(0,0,0,.7); }
+#ss-pill .ss-ic{ font-size:14px; }
+
+/* IDM-style hover button over a media element */
+#ss-hover{
+  position:absolute; z-index:2147483600; display:none; align-items:center; gap:7px;
+  font-family:'Roboto','Segoe UI',system-ui,sans-serif; font-size:13px; font-weight:700;
+  color:#fff; cursor:pointer; padding:9px 14px; border-radius:10px;
+  background:linear-gradient(135deg,#7c5cff,#ff5ca8);
+  box-shadow:0 8px 22px rgba(0,0,0,.5); user-select:none;
+  transition:transform .12s, filter .2s;
+}
+#ss-hover.show{ display:inline-flex; }
+#ss-hover:hover{ transform:scale(1.04); filter:brightness(1.08); }
+#ss-hover .ss-ic{ font-size:14px; }
+
+/* toast */
+.ss-toast{
+  position:fixed; left:50%; bottom:24px; transform:translate(-50%,14px); z-index:2147483600;
+  font-family:'Roboto','Segoe UI',system-ui,sans-serif; font-size:13px; color:#fff;
+  background:rgba(26,26,44,.96); border:1px solid rgba(255,255,255,.12);
+  padding:12px 16px; border-radius:12px; box-shadow:0 14px 40px rgba(0,0,0,.55);
+  opacity:0; transition:opacity .25s ease, transform .25s ease; max-width:420px;
+}
+.ss-toast.in{ opacity:1; transform:translate(-50%,0); }

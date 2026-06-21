@@ -1,103 +1,121 @@
-// Stream Studio — shows a one-click Download button on ANY page that the local
-// Stream Studio app can grab media from. It asks the app (/api/supported) per
-// URL; if a dedicated yt-dlp extractor handles the page, the button appears.
+// Stream Studio content script — runs on every page (and frame).
+//  • detects media (DOM <video>/<audio> + media links) and reports it
+//  • shows a compact "Download" pill on yt-dlp-supported pages (top frame)
+//  • Extended mode: an IDM-style hover Download button over each media element
 (function () {
-  const DEFAULTS = { port: "5006", collapseDelay: 20 };
-  let settings = { ...DEFAULTS };
-  let lastChecked = "";
-  let collapseTimer = null;
+  if (window.__ss_loaded) return; window.__ss_loaded = true;
+  const TOP = window.top === window;
+  const DEFAULTS = { port: "5006", collapseDelay: 20, extended: false };
+  let S = { ...DEFAULTS };
+  const base = () => `http://127.0.0.1:${S.port}`;
 
-  function loadSettings(cb) {
+  function load(cb) {
     try {
-      chrome.storage.local.get(["port", "collapseDelay"], d => {
-        settings.port = d.port || DEFAULTS.port;
-        const n = +d.collapseDelay;
-        settings.collapseDelay = Number.isFinite(n) && n > 0 ? n : DEFAULTS.collapseDelay;
-        cb && cb();
+      chrome.storage.local.get(["port", "collapseDelay", "extended"], d => {
+        S.port = d.port || DEFAULTS.port;
+        const n = +d.collapseDelay; S.collapseDelay = Number.isFinite(n) && n > 0 ? n : DEFAULTS.collapseDelay;
+        S.extended = !!d.extended; cb && cb();
       });
     } catch { cb && cb(); }
   }
   try {
     chrome.storage.onChanged.addListener(ch => {
-      if (ch.port) settings.port = ch.port.newValue || DEFAULTS.port;
-      if (ch.collapseDelay) settings.collapseDelay = +ch.collapseDelay.newValue || DEFAULTS.collapseDelay;
+      if (ch.port) S.port = ch.port.newValue || DEFAULTS.port;
+      if (ch.extended) { S.extended = !!ch.extended.newValue; if (TOP) (S.extended ? enableHover() : disableHover()); }
     });
   } catch {}
 
-  const base = () => `http://127.0.0.1:${settings.port}`;
+  function send(type, extra) { return new Promise(res => { try { chrome.runtime.sendMessage({ type, ...extra }, res); } catch { res(); } }); }
 
-  async function isSupported(u) {
-    try {
-      const r = await fetch(`${base()}/api/supported?u=${encodeURIComponent(u)}`, { cache: "no-store" });
-      return (await r.json()).supported === true;
-    } catch { return false; }   // app not running -> no button
+  function toast(text) {
+    if (!TOP) return;
+    const t = document.createElement("div"); t.className = "ss-toast"; t.textContent = text;
+    document.body.appendChild(t); requestAnimationFrame(() => t.classList.add("in"));
+    setTimeout(() => { t.classList.remove("in"); setTimeout(() => t.remove(), 300); }, 3500);
   }
 
-  function startDownload() {
-    window.open(`${base()}/?u=${encodeURIComponent(location.href)}&dl=1`, "_blank");
-  }
-
-  function clearTimer() { if (collapseTimer) { clearTimeout(collapseTimer); collapseTimer = null; } }
-  function armCollapse(card) {
-    clearTimer();
-    if (settings.collapseDelay > 0)
-      collapseTimer = setTimeout(() => card.classList.add("yts-collapsed"), settings.collapseDelay * 1000);
-  }
-
-  function buildCard() {
-    const card = document.createElement("div");
-    card.id = "yts-card";
-    card.innerHTML = `
-      <div class="yts-glow"></div>
-      <div class="yts-row">
-        <span class="yts-badge">⬇</span>
-        <div class="yts-text">
-          <div class="yts-title">Download this media</div>
-          <div class="yts-sub">One click · saved by Stream Studio</div>
-        </div>
-        <button class="yts-cta" type="button">Download →</button>
-        <button class="yts-x" type="button" title="Collapse">▾</button>
-      </div>
-      <button class="yts-pill" type="button" title="Download this media">
-        <span class="yts-badge sm">⬇</span><span>Download</span>
-      </button>`;
-    card.querySelector(".yts-cta").addEventListener("click", startDownload);
-    card.querySelector(".yts-pill").addEventListener("click", e => {
-      e.stopPropagation();
-      if (card.classList.contains("yts-collapsed")) { card.classList.remove("yts-collapsed"); armCollapse(card); }
-      else startDownload();
+  function download(url, kind) {
+    send("quickDownload", { url, referer: location.href, title: document.title, kind }).then(r => {
+      if (r && r.job_id) toast("⬇ Downloading…  (saving to Downloads ▸ Stream Studio)");
+      else toast((r && r.error) || "Couldn't start — is Stream Studio running?");
     });
-    card.querySelector(".yts-x").addEventListener("click", () => { clearTimer(); card.classList.add("yts-collapsed"); });
-    ["mouseenter", "focusin"].forEach(ev => card.addEventListener(ev, clearTimer));
-    card.addEventListener("mouseleave", () => { if (!card.classList.contains("yts-collapsed")) armCollapse(card); });
-    return card;
   }
 
-  function showCard() {
-    let card = document.getElementById("yts-card");
-    if (!card) {
-      card = buildCard();
-      document.body.appendChild(card);
-      requestAnimationFrame(() => card.classList.add("yts-in"));
-      armCollapse(card);
-    } else if (card.parentNode !== document.body) {
-      document.body.appendChild(card);
+  // ---- DOM media detection (runs in every frame) ----
+  const MEDIA_LINK = /\.(mp4|m4v|webm|mkv|mov|mp3|m4a|aac|ogg|opus|flac|wav)(\?|#|$)/i;
+  function domMedia() {
+    const items = [];
+    document.querySelectorAll("video, audio").forEach(el => {
+      const src = el.currentSrc || el.src || "";
+      if (/^https?:/i.test(src)) items.push({ url: src, ct: el.tagName === "AUDIO" ? "audio/" : "video/" });
+      el.querySelectorAll("source").forEach(s => { if (/^https?:/i.test(s.src)) items.push({ url: s.src }); });
+    });
+    document.querySelectorAll("a[href]").forEach(a => { if (MEDIA_LINK.test(a.href)) items.push({ url: a.href }); });
+    if (items.length) send("addDomMedia", { items });
+  }
+
+  // ---- compact "Download this page" pill (supported sites, top frame) ----
+  async function supported(u) {
+    try { const r = await fetch(`${base()}/api/supported?u=${encodeURIComponent(u)}`, { cache: "no-store" }); return (await r.json()).supported === true; }
+    catch { return false; }
+  }
+  let lastHref = "";
+  async function pillCheck() {
+    if (!TOP) return;
+    const href = location.href; if (href === lastHref) return; lastHref = href;
+    const ex = document.getElementById("ss-pill");
+    if (await supported(href)) { if (!ex) makePill(); } else if (ex) ex.remove();
+  }
+  function makePill() {
+    const p = document.createElement("div"); p.id = "ss-pill";
+    p.innerHTML = `<button class="ss-pill-btn" title="Download this page with Stream Studio"><span class="ss-ic">⬇</span><span>Download</span></button><button class="ss-pill-x" title="Hide">✕</button>`;
+    p.querySelector(".ss-pill-btn").addEventListener("click", () => send("openApp", { url: location.href }));
+    p.querySelector(".ss-pill-x").addEventListener("click", () => p.remove());
+    document.body.appendChild(p); requestAnimationFrame(() => p.classList.add("in"));
+  }
+
+  // ---- IDM-style hover Download button over media (top frame) ----
+  let hoverBtn = null, hoverEl = null, hideTimer = null;
+  function ensureHoverBtn() {
+    if (hoverBtn) return hoverBtn;
+    hoverBtn = document.createElement("div"); hoverBtn.id = "ss-hover";
+    hoverBtn.innerHTML = `<span class="ss-ic">⬇</span> Download`;
+    hoverBtn.addEventListener("click", e => {
+      e.stopPropagation(); e.preventDefault(); if (!hoverEl) return;
+      const src = hoverEl.currentSrc || hoverEl.src || "";
+      const kind = hoverEl.tagName === "AUDIO" ? "audio" : "video";
+      if (/^https?:/i.test(src)) download(src, kind);
+      else { send("openApp", { url: location.href }); toast("Opening Stream Studio for this player…"); }
+    });
+    hoverBtn.addEventListener("mouseenter", () => clearTimeout(hideTimer));
+    hoverBtn.addEventListener("mouseleave", scheduleHide);
+    document.body.appendChild(hoverBtn);
+    return hoverBtn;
+  }
+  function positionHover(el) {
+    const r = el.getBoundingClientRect();
+    if (r.width < 120 || r.height < 60) { hideHover(); return; }   // skip tiny/icon players
+    const b = ensureHoverBtn(); b.classList.add("show");
+    b.style.top = (window.scrollY + r.top + 12) + "px";
+    b.style.left = (window.scrollX + r.right - 12 - b.offsetWidth) + "px";
+  }
+  function scheduleHide() { hideTimer = setTimeout(hideHover, 400); }
+  function hideHover() { if (hoverBtn) hoverBtn.classList.remove("show"); hoverEl = null; }
+  function onOver(e) { const el = e.target.closest && e.target.closest("video, audio"); if (el) { hoverEl = el; clearTimeout(hideTimer); positionHover(el); } }
+  function onOut(e) { if (e.target.closest && e.target.closest("video, audio")) scheduleHide(); }
+  function onScroll() { if (hoverEl) positionHover(hoverEl); }
+  function enableHover() { document.addEventListener("mouseover", onOver, true); document.addEventListener("mouseout", onOut, true); window.addEventListener("scroll", onScroll, true); }
+  function disableHover() { document.removeEventListener("mouseover", onOver, true); document.removeEventListener("mouseout", onOut, true); window.removeEventListener("scroll", onScroll, true); hideHover(); }
+
+  load(() => {
+    domMedia();
+    pillCheck();
+    if (TOP && S.extended) enableHover();
+    setInterval(domMedia, 3000);
+    if (TOP) {
+      let last = location.href;
+      setInterval(() => { if (location.href !== last) { last = location.href; pillCheck(); } }, 1200);
+      document.addEventListener("yt-navigate-finish", () => setTimeout(pillCheck, 300));
     }
-  }
-  function hideCard() { const c = document.getElementById("yts-card"); if (c) c.remove(); }
-
-  async function check() {
-    const href = location.href;
-    if (href === lastChecked) return;
-    lastChecked = href;
-    if (!/^https?:/i.test(href)) { hideCard(); return; }
-    if (await isSupported(href)) showCard(); else hideCard();
-  }
-
-  loadSettings(() => {
-    check();
-    let last = location.href;
-    setInterval(() => { if (location.href !== last) { last = location.href; check(); } }, 1200);
-    document.addEventListener("yt-navigate-finish", () => setTimeout(check, 300));
   });
 })();

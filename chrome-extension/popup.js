@@ -1,76 +1,58 @@
 const $ = s => document.querySelector(s);
-let currentUrl = null;
+let tab = null;
 
-function isSupported(u) {
-  // Any normal web page is fair game — the app (yt-dlp) decides if it's grabbable.
-  return /^https?:\/\//i.test(u || "") && !/^https?:\/\/(chrome|edge|about)/i.test(u || "");
-}
+function msg(m) { return new Promise(res => { try { chrome.runtime.sendMessage(m, res); } catch { res(); } }); }
+function short(u) { try { const x = new URL(u); return (x.pathname.split("/").pop() || x.hostname) + (x.search ? "…" : ""); } catch { return u.slice(0, 60); } }
+function kindOf(u) { return /\.(mp3|m4a|aac|ogg|opus|flac|wav)(\?|#|$)/i.test(u) ? "audio" : "video"; }
 
-// load saved settings
-chrome.storage.local.get(["port", "collapseDelay"], d => {
+// ---- settings ----
+chrome.storage.local.get(["port", "collapseDelay", "extended"], d => {
   if (d.port) $("#port").value = d.port;
   if (d.collapseDelay) $("#collapseDelay").value = d.collapseDelay;
+  $("#extended").checked = !!d.extended;
 });
+$("#extended").addEventListener("change", () => chrome.storage.local.set({ extended: $("#extended").checked }));
 $("#port").addEventListener("change", () => chrome.storage.local.set({ port: $("#port").value.trim() || "5006" }));
 $("#collapseDelay").addEventListener("change", () => {
   let v = parseInt($("#collapseDelay").value, 10);
-  if (!Number.isFinite(v) || v < 3) v = 20;
-  if (v > 600) v = 600;
-  $("#collapseDelay").value = v;
-  chrome.storage.local.set({ collapseDelay: v });
+  if (!Number.isFinite(v) || v < 3) v = 20; if (v > 600) v = 600;
+  $("#collapseDelay").value = v; chrome.storage.local.set({ collapseDelay: v });
 });
 
-chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
-  const tab = tabs[0];
-  currentUrl = tab?.url || "";
-  if (isSupported(currentUrl)) {
-    $("#vid").textContent = (tab.title || currentUrl).replace(/ - YouTube$/, "");
-    $("#send").disabled = false;
-  } else {
-    $("#vid").innerHTML = '<span class="bad">Open a media page first (this isn\'t a web page).</span>';
-    $("#send").disabled = true;
+// ---- current tab + media list ----
+chrome.tabs.query({ active: true, currentWindow: true }, async tabs => {
+  tab = tabs[0];
+  if (!tab || !/^https?:/i.test(tab.url || "")) {
+    $("#page").disabled = true;
+    $("#list").innerHTML = '<div class="empty">Open a normal web page to use this.</div>';
+    return;
   }
+  const r = await msg({ type: "getMedia", tabId: tab.id });
+  render((r && r.media) || []);
 });
 
-$("#send").addEventListener("click", () => {
-  if (!isSupported(currentUrl)) return;
-  const port = ($("#port").value.trim() || "5006");
-  const appUrl = `http://127.0.0.1:${port}/?u=${encodeURIComponent(currentUrl)}`;
-  chrome.tabs.create({ url: appUrl });
-  window.close();
-});
+$("#page").addEventListener("click", () => { msg({ type: "openApp", url: tab.url }); window.close(); });
 
-$("#copy").addEventListener("click", async () => {
-  try {
-    await navigator.clipboard.writeText(currentUrl || "");
-    $("#status").innerHTML = '<span class="ok">URL copied.</span>';
-  } catch { $("#status").innerHTML = '<span class="bad">Copy failed.</span>'; }
-});
-
-// ---- check whether the app ships a newer extension than the one loaded ----
-function cmpVer(a, b) {
-  const pa = String(a).split("."), pb = String(b).split(".");
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    const d = (parseInt(pa[i] || 0, 10)) - (parseInt(pb[i] || 0, 10));
-    if (d) return d;
+function render(media) {
+  const list = $("#list");
+  $("#count").textContent = media.length ? `(${media.length})` : "";
+  if (!media.length) {
+    list.innerHTML = '<div class="empty">Nothing detected yet. Play the video, or use the “Download this page” button above for sites like YouTube.</div>';
+    return;
   }
-  return 0;
+  list.innerHTML = "";
+  media.forEach(m => {
+    const kind = m.kind || kindOf(m.url);
+    const li = document.createElement("div"); li.className = "mi";
+    li.innerHTML = `<span class="k">${kind === "audio" ? "AUD" : "VID"}</span>
+      <span class="u" title="${m.url.replace(/"/g, "&quot;")}">${short(m.url)}</span>
+      <button class="go">⬇</button>`;
+    li.querySelector(".go").addEventListener("click", async () => {
+      const res = await msg({ type: "quickDownload", url: m.url, referer: tab.url, title: tab.title, kind });
+      $("#status").innerHTML = (res && res.job_id)
+        ? '<span class="ok">Download started — saving to Downloads ▸ Stream Studio.</span>'
+        : `<span class="bad">${(res && res.error) || "Couldn't start (is the app running?)"}</span>`;
+    });
+    list.appendChild(li);
+  });
 }
-(async function checkExtensionUpdate() {
-  const port = ($("#port").value.trim() || "5006");
-  const mine = chrome.runtime.getManifest().version;
-  try {
-    const r = await fetch(`http://127.0.0.1:${port}/api/version`, { cache: "no-store" });
-    const d = await r.json();
-    if (d.extension_version && cmpVer(d.extension_version, mine) > 0) {
-      $("#updtext").textContent =
-        `You have v${mine}; the app now includes v${d.extension_version}. Reload the unpacked extension to update.`;
-      $("#updnotice").style.display = "block";
-    }
-  } catch { /* app not running — nothing to check */ }
-})();
-
-$("#updbtn").addEventListener("click", () => {
-  chrome.tabs.create({ url: "chrome://extensions" });
-  window.close();
-});

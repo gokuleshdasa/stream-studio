@@ -427,6 +427,39 @@ def api_process():
     return jsonify({"job_id": job_id})
 
 
+@app.route("/api/quickdownload", methods=["POST", "OPTIONS"])
+def api_quickdownload():
+    # Fire-and-forget whole-file download for the browser extension (IDM-style).
+    if request.method == "OPTIONS":
+        return _cors(jsonify({}))
+    data = request.get_json(force=True)
+    url = (data.get("url") or "").strip()
+    if not url:
+        return _cors(jsonify({"error": "No URL"})), 400
+    kind = (data.get("kind") or "video").lower()
+    job_id = uuid.uuid4().hex[:12]
+    jobdata = {
+        "url": url, "title": data.get("title") or "media",
+        "mode": "audio" if kind == "audio" else "video",
+        "audioFormat": "mp3", "audioBitrate": "192",
+        "videoFormat": "mp4", "videoBitrate": "original",
+        "videoQuality": "best", "regions": [],
+    }
+    if data.get("headers"):
+        jobdata["http_headers"] = data["headers"]
+    set_job(job_id, status="queued", stage="Queued", progress=0,
+            message="Queued", files=[], error=None, title=jobdata["title"])
+    threading.Thread(target=run_job, args=(job_id, jobdata), daemon=True).start()
+    return _cors(jsonify({"job_id": job_id}))
+
+
+def _cors(resp):
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    resp.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+    return resp
+
+
 @app.route("/api/progress/<job_id>")
 def api_progress(job_id):
     job = get_job(job_id)
@@ -717,6 +750,8 @@ def _run_job(job_id, data):
         ydl_opts["ffmpeg_location"] = str(Path(FFMPEG).parent)
     if merge_fmt:
         ydl_opts["merge_output_format"] = merge_fmt
+    if data.get("http_headers"):
+        ydl_opts["http_headers"] = data["http_headers"]
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
