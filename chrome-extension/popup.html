@@ -55,7 +55,16 @@
     <div class="t">Show hover Download button on any media<small>IDM-style button over every &lt;video&gt;/&lt;audio&gt;</small></div>
     <label class="sw"><input type="checkbox" id="extended"><span class="sl"></span></label>
   </div>
-  <div class="field"><span>App port</span><input id="port" type="text" value="5006"></div>
+  <div class="toggle" style="margin-top:8px">
+    <div class="t">Detect these media types<small>shown in the right-click download manager</small></div>
+  </div>
+  <div style="display:flex;gap:14px;margin:8px 2px 0;font-size:12.5px;color:#c4c9e4">
+    <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="t_video" checked> Video</label>
+    <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="t_audio" checked> Audio</label>
+    <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="t_image" checked> Images</label>
+  </div>
+
+  <div class="field" style="margin-top:12px"><span>App port</span><input id="port" type="text" value="5006"></div>
   <div class="field"><span>Auto-collapse (sec)</span><input id="collapseDelay" type="number" min="3" max="600" value="20"></div>
 
   <div id="status" class="note"></div>

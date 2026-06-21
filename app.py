@@ -478,12 +478,95 @@ def _cors(resp):
     return resp
 
 
+def _ext_from(url, ctype):
+    m = re.search(r"\.([a-z0-9]{2,5})(?:\?|#|$)", url, re.I)
+    if m:
+        return m.group(1).lower()
+    ct = (ctype or "").split(";")[0].strip().lower()
+    return {"audio/mpeg": "mp3", "audio/mp4": "m4a", "video/mp4": "mp4",
+            "video/webm": "webm", "image/jpeg": "jpg", "image/png": "png",
+            "image/gif": "gif", "image/webp": "webp"}.get(ct, "bin")
+
+
+def _grab_one(url, title, headers, outdir, idx):
+    """Download a single item to outdir. Streaming -> yt-dlp; else direct fetch
+    (with the caller-supplied cookies/UA/Referer)."""
+    name = f"{idx:02d} - " + sanitize(title or "file")
+    if re.search(r"\.(m3u8|mpd)(\?|#|$)", url, re.I):
+        out = outdir / f"{name}.mp4"
+        ydl_opts = {"quiet": True, "no_warnings": True, "noplaylist": True,
+                    "outtmpl": str(out.with_suffix("")) + ".%(ext)s",
+                    "merge_output_format": "mp4", **EJS_OPTS, **IMPERSONATE}
+        if FFMPEG != "ffmpeg":
+            ydl_opts["ffmpeg_location"] = str(Path(FFMPEG).parent)
+        if headers:
+            ydl_opts["http_headers"] = headers
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.extract_info(url, download=True)
+        got = next(iter(sorted(outdir.glob(name + ".*"))), None)
+        return got or out
+    req = urllib.request.Request(url, headers={"User-Agent": BROWSER_UA, **(headers or {})})
+    with urllib.request.urlopen(req, timeout=90) as r:
+        blob = r.read()
+        ext = _ext_from(url, r.headers.get("Content-Type"))
+    out = outdir / f"{name}.{ext}"
+    out.write_bytes(blob)
+    return out
+
+
+@app.route("/api/zipbundle", methods=["POST", "OPTIONS"])
+def api_zipbundle():
+    # Download a chosen set of media (with the page cookies) and zip them.
+    if request.method == "OPTIONS":
+        return _cors(jsonify({}))
+    data = request.get_json(force=True)
+    items = data.get("items") or []
+    headers = data.get("headers") or {}
+    want_zip = bool(data.get("zip", True))
+    if not items:
+        return _cors(jsonify({"error": "No items"})), 400
+    job_id = uuid.uuid4().hex[:12]
+    set_batch(job_id, status="running", done=0, total=len(items), zip=None, error=None,
+              items=[{"title": it.get("title") or "file", "url": it.get("url"),
+                      "status": "queued", "progress": 0, "file": None, "error": None}
+                     for it in items])
+
+    def work():
+        outdir = OUT / ("bundle_" + job_id)
+        if outdir.exists():
+            shutil.rmtree(outdir, ignore_errors=True)
+        outdir.mkdir(parents=True)
+        rows = get_batch(job_id)["items"]
+        produced = []
+        for i, it in enumerate(items):
+            rows[i]["status"] = "downloading"; set_batch(job_id, items=rows)
+            try:
+                out = _grab_one(it["url"], it.get("title"), headers, outdir, i + 1)
+                rows[i].update(status="done", progress=100, file=out.name,
+                               url=f"/api/file/bundle_{job_id}/{out.name}", size=out.stat().st_size)
+                produced.append(out)
+            except Exception as e:
+                rows[i].update(status="error", error=str(e)[:160])
+            set_batch(job_id, items=rows, done=i + 1)
+        zurl, zsize = None, 0
+        if produced and want_zip:
+            zp = outdir / "Stream Studio downloads.zip"
+            with zipfile.ZipFile(zp, "w", zipfile.ZIP_STORED) as z:
+                for p in produced:
+                    z.write(p, p.name)
+            zurl, zsize = f"/api/file/bundle_{job_id}/{zp.name}", zp.stat().st_size
+        set_batch(job_id, status="done", zip=zurl, zip_size=zsize)
+
+    threading.Thread(target=work, daemon=True).start()
+    return _cors(jsonify({"batch_id": job_id}))
+
+
 @app.route("/api/progress/<job_id>")
 def api_progress(job_id):
     job = get_job(job_id)
     if not job:
-        return jsonify({"error": "unknown job"}), 404
-    return jsonify(job)
+        return _cors(jsonify({"error": "unknown job"})), 404
+    return _cors(jsonify(job))
 
 
 @app.route("/api/file/<job_id>/<path:fname>")
@@ -590,8 +673,8 @@ def api_batch_process():
 def api_batch_progress(bid):
     b = get_batch(bid)
     if not b:
-        return jsonify({"error": "unknown batch"}), 404
-    return jsonify(b)
+        return _cors(jsonify({"error": "unknown batch"})), 404
+    return _cors(jsonify(b))
 
 
 def run_batch(bid, data):

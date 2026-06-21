@@ -1,5 +1,47 @@
 /* ===== Stream Studio — injected UI ===== */
 
+/* ---- download-manager modal ---- */
+#ss-modal-bg{
+  position:fixed; inset:0; z-index:2147483640; display:flex; align-items:center; justify-content:center;
+  background:rgba(5,5,12,.6); backdrop-filter:blur(4px); opacity:0; transition:opacity .2s ease;
+  font-family:'Roboto','Segoe UI',system-ui,sans-serif;
+}
+#ss-modal-bg.in{ opacity:1; }
+#ss-modal{
+  width:min(620px,92vw); max-height:84vh; display:flex; flex-direction:column; color:#eef0ff;
+  background:linear-gradient(160deg,#16162a,#10101e); border:1px solid rgba(255,255,255,.1);
+  border-radius:18px; box-shadow:0 30px 80px rgba(0,0,0,.6); overflow:hidden;
+  transform:translateY(12px) scale(.98); transition:transform .2s ease;
+}
+#ss-modal-bg.in #ss-modal{ transform:none; }
+#ss-modal .ss-mhead{ display:flex; align-items:center; justify-content:space-between; padding:16px 18px; border-bottom:1px solid rgba(255,255,255,.08); }
+#ss-modal .ss-mtitle{ font-weight:700; font-size:15.5px; }
+#ss-modal .ss-mclose{ width:30px; height:30px; border-radius:8px; border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.05); color:#a7adc9; cursor:pointer; font-size:13px; }
+#ss-modal .ss-mclose:hover{ background:rgba(255,255,255,.12); color:#fff; }
+#ss-modal .ss-mfilters{ display:flex; gap:8px; flex-wrap:wrap; padding:14px 18px 4px; }
+#ss-modal .ss-chip{ background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.1); color:#c4c9e4; font-size:12.5px; padding:7px 13px; border-radius:20px; cursor:pointer; }
+#ss-modal .ss-chip b{ opacity:.7; font-weight:600; }
+#ss-modal .ss-chip.on{ background:linear-gradient(135deg,#7c5cff,#ff5ca8); color:#fff; border-color:transparent; }
+#ss-modal .ss-mtools{ display:flex; align-items:center; justify-content:space-between; padding:10px 18px; }
+#ss-modal .ss-selall{ display:flex; align-items:center; gap:8px; font-size:13px; color:#c4c9e4; cursor:pointer; }
+#ss-modal .ss-count{ font-size:12px; color:#8b90b5; }
+#ss-modal input[type=checkbox]{ width:17px; height:17px; accent-color:#7c5cff; cursor:pointer; }
+#ss-modal .ss-mlist{ list-style:none; margin:0; padding:0 10px 6px; overflow:auto; flex:1; }
+#ss-modal .ss-mi{ display:flex; align-items:center; gap:11px; padding:9px 10px; border-radius:10px; }
+#ss-modal .ss-mi:hover{ background:rgba(255,255,255,.05); }
+#ss-modal .ss-badge{ flex:none; font-size:9px; font-weight:700; padding:3px 6px; border-radius:5px; color:#fff; }
+#ss-modal .ss-badge.ss-video{ background:#7c5cff; } #ss-modal .ss-badge.ss-audio{ background:#19d3da; } #ss-modal .ss-badge.ss-image{ background:#ff5ca8; }
+#ss-modal .ss-th{ flex:none; width:54px; height:34px; border-radius:6px; object-fit:cover; background:rgba(0,0,0,.4); display:grid; place-items:center; font-size:13px; color:#fff; }
+#ss-modal .ss-name{ flex:1; min-width:0; font-size:12.5px; color:#c4c9e4; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+#ss-modal .ss-mempty{ padding:24px 18px; text-align:center; color:#8b90b5; font-size:13px; }
+#ss-modal .ss-mfoot{ display:flex; gap:10px; padding:14px 18px; border-top:1px solid rgba(255,255,255,.08); }
+#ss-modal .ss-mfoot button{ flex:1; border:none; border-radius:11px; padding:12px; font-size:13.5px; font-weight:600; cursor:pointer; color:#fff; }
+#ss-modal .ss-dl-sep{ background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.12)!important; }
+#ss-modal .ss-dl-sep:hover{ background:rgba(255,255,255,.14); }
+#ss-modal .ss-dl-zip{ background:linear-gradient(135deg,#7c5cff,#ff5ca8); }
+#ss-modal .ss-dl-zip:hover{ filter:brightness(1.08); }
+
+
 /* compact "Download this page" pill, lower-right (supported sites) */
 #ss-pill{
   position:fixed; right:18px; bottom:18px; z-index:2147483000;

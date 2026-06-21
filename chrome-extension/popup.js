@@ -17,12 +17,16 @@ function short(u) { try { const x = new URL(u); return (x.pathname.split("/").po
 function kindOf(u) { return /\.(mp3|m4a|aac|ogg|opus|flac|wav)(\?|#|$)/i.test(u) ? "audio" : "video"; }
 
 // ---- settings ----
-chrome.storage.local.get(["port", "collapseDelay", "extended"], d => {
+chrome.storage.local.get(["port", "collapseDelay", "extended", "types"], d => {
   if (d.port) $("#port").value = d.port;
   if (d.collapseDelay) $("#collapseDelay").value = d.collapseDelay;
   $("#extended").checked = !!d.extended;
+  const t = Object.assign({ video: true, audio: true, image: true }, d.types || {});
+  $("#t_video").checked = t.video; $("#t_audio").checked = t.audio; $("#t_image").checked = t.image;
 });
 $("#extended").addEventListener("change", () => chrome.storage.local.set({ extended: $("#extended").checked }));
+function saveTypes() { chrome.storage.local.set({ types: { video: $("#t_video").checked, audio: $("#t_audio").checked, image: $("#t_image").checked } }); }
+["#t_video", "#t_audio", "#t_image"].forEach(s => $(s).addEventListener("change", saveTypes));
 $("#port").addEventListener("change", () => chrome.storage.local.set({ port: $("#port").value.trim() || "5006" }));
 $("#collapseDelay").addEventListener("change", () => {
   let v = parseInt($("#collapseDelay").value, 10);

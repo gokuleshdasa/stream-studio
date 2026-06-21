@@ -56,7 +56,7 @@ function setupMenu() {
       contexts: ["link"], targetUrlPatterns: ["*://*/*"],
     });
     chrome.contextMenus.create({
-      id: "ss_page", title: "⬇ Download media on this page…",
+      id: "ss_page", title: "⬇ Open Stream Studio download manager",
       contexts: ["page", "frame", "selection", "image"],
     });
   });
@@ -68,14 +68,8 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   const ref = tab && tab.url;
   if (info.menuItemId === "ss_media" && info.srcUrl) return go(info.srcUrl, ref, tab);
   if (info.menuItemId === "ss_link" && info.linkUrl) return go(info.linkUrl, ref, tab);
-  // page: download everything detected on the tab; if nothing, open the app
-  const items = (tab && tabMedia[tab.id]) ? [...tabMedia[tab.id].values()] : [];
-  if (items.length) {
-    items.forEach(m => go(m.url, ref, tab, m.kind));
-    toastTab(tab && tab.id, `⬇ Downloading ${items.length} item${items.length === 1 ? "" : "s"}…`);
-  } else {
-    openApp((tab && tab.url) || "");
-  }
+  // page: open the download-manager window in the page
+  if (tab && tab.id != null) { try { chrome.tabs.sendMessage(tab.id, { type: "openManager" }); } catch {} }
 });
 
 function go(url, ref, tab, kind) {
@@ -107,7 +101,44 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     return true;
   }
   if (msg.type === "openApp") { openApp(msg.url); reply && reply({ ok: true }); return true; }
+  if (msg.type === "zipBundle") {
+    zipBundle(msg.items || [], msg.referer || (sender.tab && sender.tab.url), tabId)
+      .then(r => reply && reply(r)).catch(e => reply && reply({ error: String(e) }));
+    return true;
+  }
 });
+
+// Download a chosen set via the app and zip it; cookies passed so protected
+// files work. Progress + the final zip download are surfaced as page toasts.
+async function zipBundle(items, referer, tabId) {
+  if (!items.length) return { error: "nothing selected" };
+  const p = await new Promise(r => port(r));
+  const headers = { "User-Agent": navigator.userAgent };
+  if (referer) headers["Referer"] = referer;
+  const ck = await cookieHeader(referer || (items[0] && items[0].url) || "");
+  if (ck) headers["Cookie"] = ck;
+  let bid;
+  try {
+    const r = await fetch(`http://127.0.0.1:${p}/api/zipbundle`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ items, headers, zip: true }),
+    });
+    bid = (await r.json()).batch_id;
+  } catch { toastTab(tabId, "Stream Studio app isn't running."); return { error: "app not running" }; }
+  if (!bid) { toastTab(tabId, "Couldn't start the zip."); return { error: "no batch id" }; }
+  for (let i = 0; i < 200; i++) {
+    await new Promise(r => setTimeout(r, 1500));
+    let b; try { b = await (await fetch(`http://127.0.0.1:${p}/api/batch_progress/${bid}`, { cache: "no-store" })).json(); } catch { continue; }
+    if (b.status === "done") {
+      if (b.zip) { try { chrome.downloads.download({ url: `http://127.0.0.1:${p}${b.zip}`, saveAs: false }); } catch {} toastTab(tabId, "📦 Zip ready — downloading."); }
+      else toastTab(tabId, "Nothing could be downloaded (protected media?).");
+      return { ok: true };
+    }
+    if (b.status === "error") { toastTab(tabId, "Zip failed: " + (b.error || "")); return { error: b.error }; }
+    if (i % 3 === 0) toastTab(tabId, `📦 Preparing zip… ${b.done}/${b.total}`);
+  }
+  return { ok: true };
+}
 
 // ---- downloads ----
 const DIRECT_FILE = /\.(mp4|m4v|webm|mkv|mov|mp3|m4a|aac|ogg|opus|flac|wav)(\?|#|$)/i;
