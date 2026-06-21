@@ -8,7 +8,7 @@
     "default_title": "Stream Studio — media on this page"
   },
   "icons": { "16": "icons/icon16.png", "48": "icons/icon48.png", "128": "icons/icon128.png" },
-  "permissions": ["tabs", "storage", "contextMenus", "webRequest"],
+  "permissions": ["tabs", "storage", "contextMenus", "webRequest", "downloads", "cookies"],
   "host_permissions": ["<all_urls>"],
   "background": { "service_worker": "background.js" },
   "content_scripts": [

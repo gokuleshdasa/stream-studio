@@ -102,6 +102,24 @@ if DENO:
 # so all YouTube formats are reachable. (Fetched once from GitHub, then cached.)
 EJS_OPTS = {"remote_components": ["ejs:github"]} if DENO else {}
 
+# Browser impersonation (via curl_cffi) so Cloudflare / anti-bot protected
+# sites stop returning HTTP 403. Only enabled if a target is actually available
+# in this build — otherwise left off so normal requests are never broken.
+def _impersonate_opts():
+    try:
+        probe = yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True})
+        targets = probe._get_available_impersonate_targets()
+        if not targets:
+            return {}
+        norm = [(t[0] if isinstance(t, (list, tuple)) else t) for t in targets]
+        chosen = next((t for t in norm if "chrome" in str(t).lower()), norm[0])
+        # global target + tell the generic extractor to impersonate the webpage
+        return {"impersonate": chosen,
+                "extractor_args": {"generic": {"impersonate": [""]}}}
+    except Exception:
+        return {}
+IMPERSONATE = _impersonate_opts()
+
 # Prevent ffmpeg/child processes from flashing a console window when the app
 # itself runs windowed (no console) as a background tray process.
 NO_WINDOW = 0x08000000 if os.name == "nt" else 0  # CREATE_NO_WINDOW
@@ -371,7 +389,7 @@ def api_info():
     url = (data.get("url") or "").strip()
     if not url:
         return jsonify({"error": "No URL provided"}), 400
-    ydl_opts = {"quiet": True, "no_warnings": True, "skip_download": True, "noplaylist": True, **EJS_OPTS}
+    ydl_opts = {"quiet": True, "no_warnings": True, "skip_download": True, "noplaylist": True, **EJS_OPTS, **IMPERSONATE}
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
@@ -501,7 +519,7 @@ def _thumb(e):
 def _flat_entries(url, cap=200):
     """Quickly enumerate a playlist/channel (or pass through a single video)."""
     opts = {"quiet": True, "no_warnings": True, "extract_flat": "in_playlist",
-            "skip_download": True, **EJS_OPTS}
+            "skip_download": True, **EJS_OPTS, **IMPERSONATE}
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=False)
     if info.get("entries") is not None:
@@ -651,7 +669,7 @@ def _fetch_and_convert(url, title, mode, afmt, abr, vfmt, vbr, vquality, outdir,
 
         ydl_opts = {"quiet": True, "no_warnings": True, "noplaylist": True,
                     "format": fmt, "outtmpl": str(tmp / "src.%(ext)s"),
-                    "progress_hooks": [hook], **EJS_OPTS}
+                    "progress_hooks": [hook], **EJS_OPTS, **IMPERSONATE}
         if FFMPEG != "ffmpeg":
             ydl_opts["ffmpeg_location"] = str(Path(FFMPEG).parent)
         if merge_fmt:
@@ -744,7 +762,7 @@ def _run_job(job_id, data):
     ydl_opts = {
         "quiet": True, "no_warnings": True, "noplaylist": True,
         "format": fmt, "outtmpl": outtmpl, "progress_hooks": [hook],
-        **EJS_OPTS,
+        **EJS_OPTS, **IMPERSONATE,
     }
     if FFMPEG != "ffmpeg":
         ydl_opts["ffmpeg_location"] = str(Path(FFMPEG).parent)

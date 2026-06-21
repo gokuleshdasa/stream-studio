@@ -36,10 +36,14 @@
 
   function download(url, kind) {
     send("quickDownload", { url, referer: location.href, title: document.title, kind }).then(r => {
-      if (r && r.job_id) toast("⬇ Downloading…  (saving to Downloads ▸ Stream Studio)");
+      if (r && r.via === "browser") toast("⬇ Downloading in your browser…");
+      else if (r && r.job_id) toast("⬇ Downloading…  (saving to Downloads ▸ Stream Studio)");
       else toast((r && r.error) || "Couldn't start — is Stream Studio running?");
     });
   }
+
+  // toasts requested by the background (right-click downloads, etc.)
+  try { chrome.runtime.onMessage.addListener(m => { if (m && m.type === "toast") toast(m.text); }); } catch {}
 
   // ---- DOM media detection (runs in every frame) ----
   const MEDIA_LINK = /\.(mp4|m4v|webm|mkv|mov|mp3|m4a|aac|ogg|opus|flac|wav)(\?|#|$)/i;
