@@ -1,6 +1,13 @@
 # Runtime
 flask>=3.0
-yt-dlp
+# 2026.8.30+ carries the fresh YouTube extractor fixes that avoid 403s.
+yt-dlp>=2026.8.30
+# JS challenge solver + faster compression — both used silently by yt-dlp when
+# present and both materially reduce 403s / partial-content errors on YouTube.
+yt-dlp-ejs>=0.8.0
+brotli>=1.1.0
+# Browser impersonation (Cloudflare / anti-bot). Optional but strongly wanted.
+curl_cffi>=0.7.0
 
 # Tray app (Windows background mode)
 pystray

@@ -120,6 +120,60 @@ def _impersonate_opts():
         return {}
 IMPERSONATE = _impersonate_opts()
 
+# ---- user settings (cookies-from-browser, etc.) -----------------------------
+# Persisted in the same user-writable folder as the yt-dlp override so it
+# survives app updates / reinstalls.
+SETTINGS_FILE = OVERRIDE_DIR.parent / "settings.json"
+_SETTINGS_DEFAULTS = {
+    # One of: "", "chrome", "edge", "firefox", "brave", "chromium", "opera",
+    # "vivaldi", "safari". "" disables cookie loading.
+    "cookies_from_browser": "",
+    # Keep yt-dlp fresh automatically. Off by default is a footgun — YouTube
+    # breaks the extractor every couple of weeks and 403s follow. On is what
+    # end users actually want.
+    "auto_update_ytdlp": True,
+}
+
+
+def load_settings():
+    try:
+        with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f) or {}
+    except Exception:
+        data = {}
+    out = dict(_SETTINGS_DEFAULTS)
+    out.update({k: data.get(k, v) for k, v in _SETTINGS_DEFAULTS.items()})
+    return out
+
+
+def save_settings(patch):
+    cur = load_settings()
+    cur.update({k: patch[k] for k in patch if k in _SETTINGS_DEFAULTS})
+    SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+        json.dump(cur, f, indent=2)
+    return cur
+
+
+def cookie_opts():
+    """yt-dlp options that pull cookies from a browser profile, if configured.
+
+    Read fresh on each call so the user can change the setting without a
+    restart. Bad values are silently ignored (yt-dlp would raise otherwise).
+    """
+    ALLOWED = {"chrome", "edge", "firefox", "brave", "chromium",
+               "opera", "vivaldi", "safari"}
+    who = (load_settings().get("cookies_from_browser") or "").strip().lower()
+    if who in ALLOWED:
+        return {"cookiesfrombrowser": (who,)}
+    return {}
+
+
+def base_ytdlp_opts():
+    """Common yt-dlp options every call site should include: JS runtime,
+    browser impersonation, and browser cookies (all optional / best-effort)."""
+    return {**EJS_OPTS, **IMPERSONATE, **cookie_opts()}
+
 # Prevent ffmpeg/child processes from flashing a console window when the app
 # itself runs windowed (no console) as a background tray process.
 NO_WINDOW = 0x08000000 if os.name == "nt" else 0  # CREATE_NO_WINDOW
@@ -332,10 +386,28 @@ def index():
 
 @app.route("/api/version")
 def api_version():
-    # Used by the Chrome extension to detect when a newer extension ships.
+    """Combined version endpoint. Fields:
+       * extension_version / ytdlp_current  — legacy shape the Chrome extension polls.
+       * ytdlp / latest / update_available / wheel / busy / last_error — used by
+         the in-browser update banner.
+    PyPI lookup is best-effort; a network failure leaves latest=null instead of
+    breaking the response (extension check must never fail)."""
+    cur = current_ytdlp()
+    latest, wheel = None, None
+    try:
+        latest, wheel = latest_ytdlp()
+    except Exception:
+        pass
+    update_available = bool(latest) and _ver_tuple(latest) > _ver_tuple(cur)
     resp = jsonify({
         "extension_version": EXTENSION_VERSION,
-        "ytdlp_current": current_ytdlp(),
+        "ytdlp_current": cur,
+        "ytdlp": cur,
+        "latest": latest,
+        "update_available": update_available,
+        "wheel": wheel if update_available else None,
+        "busy": _UPDATE_STATE["busy"],
+        "last_error": _UPDATE_STATE["last_error"],
     })
     resp.headers["Access-Control-Allow-Origin"] = "*"
     return resp
@@ -373,6 +445,49 @@ def _url_supported(u):
     return ok
 
 
+# ---- version / update / settings endpoints ---------------------------------
+_UPDATE_STATE = {"busy": False, "last_error": None}
+_UPDATE_LOCK = threading.Lock()
+
+
+@app.route("/api/update_ytdlp", methods=["POST"])
+def api_update_ytdlp():
+    """Kick off a background yt-dlp update using the same OVERRIDE_DIR path
+    the tray menu uses. Returns immediately; poll /api/version for progress."""
+    with _UPDATE_LOCK:
+        if _UPDATE_STATE["busy"]:
+            return jsonify({"status": "busy"}), 202
+        _UPDATE_STATE["busy"] = True
+        _UPDATE_STATE["last_error"] = None
+
+    def worker():
+        try:
+            _, url = latest_ytdlp()
+            if not url:
+                raise RuntimeError("no wheel url on PyPI")
+            install_ytdlp(url)
+            # New yt_dlp is on disk but the current process still holds the
+            # old one in memory. Flag it so the UI can prompt for a restart.
+            _UPDATE_STATE["last_error"] = None
+        except Exception as e:
+            _UPDATE_STATE["last_error"] = str(e)[:200]
+        finally:
+            _UPDATE_STATE["busy"] = False
+
+    threading.Thread(target=worker, daemon=True).start()
+    return jsonify({"status": "started"})
+
+
+@app.route("/api/settings", methods=["GET", "POST"])
+def api_settings():
+    if request.method == "POST":
+        data = request.get_json(force=True) or {}
+        cur = save_settings(data)
+    else:
+        cur = load_settings()
+    return jsonify(cur)
+
+
 @app.route("/api/supported")
 def api_supported():
     # The browser extension calls this for the current page; if a dedicated
@@ -389,7 +504,7 @@ def api_info():
     url = (data.get("url") or "").strip()
     if not url:
         return jsonify({"error": "No URL provided"}), 400
-    ydl_opts = {"quiet": True, "no_warnings": True, "skip_download": True, "noplaylist": True, **EJS_OPTS, **IMPERSONATE}
+    ydl_opts = {"quiet": True, "no_warnings": True, "skip_download": True, "noplaylist": True, **base_ytdlp_opts()}
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
@@ -496,7 +611,7 @@ def _grab_one(url, title, headers, outdir, idx):
         out = outdir / f"{name}.mp4"
         ydl_opts = {"quiet": True, "no_warnings": True, "noplaylist": True,
                     "outtmpl": str(out.with_suffix("")) + ".%(ext)s",
-                    "merge_output_format": "mp4", **EJS_OPTS, **IMPERSONATE}
+                    "merge_output_format": "mp4", **base_ytdlp_opts()}
         if FFMPEG != "ffmpeg":
             ydl_opts["ffmpeg_location"] = str(Path(FFMPEG).parent)
         if headers:
@@ -602,7 +717,7 @@ def _thumb(e):
 def _flat_entries(url, cap=200):
     """Quickly enumerate a playlist/channel (or pass through a single video)."""
     opts = {"quiet": True, "no_warnings": True, "extract_flat": "in_playlist",
-            "skip_download": True, **EJS_OPTS, **IMPERSONATE}
+            "skip_download": True, **base_ytdlp_opts()}
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=False)
     if info.get("entries") is not None:
@@ -752,7 +867,7 @@ def _fetch_and_convert(url, title, mode, afmt, abr, vfmt, vbr, vquality, outdir,
 
         ydl_opts = {"quiet": True, "no_warnings": True, "noplaylist": True,
                     "format": fmt, "outtmpl": str(tmp / "src.%(ext)s"),
-                    "progress_hooks": [hook], **EJS_OPTS, **IMPERSONATE}
+                    "progress_hooks": [hook], **base_ytdlp_opts()}
         if FFMPEG != "ffmpeg":
             ydl_opts["ffmpeg_location"] = str(Path(FFMPEG).parent)
         if merge_fmt:
@@ -845,7 +960,7 @@ def _run_job(job_id, data):
     ydl_opts = {
         "quiet": True, "no_warnings": True, "noplaylist": True,
         "format": fmt, "outtmpl": outtmpl, "progress_hooks": [hook],
-        **EJS_OPTS, **IMPERSONATE,
+        **base_ytdlp_opts(),
     }
     if FFMPEG != "ffmpeg":
         ydl_opts["ffmpeg_location"] = str(Path(FFMPEG).parent)
@@ -1005,6 +1120,92 @@ def _port_open(port):
         return s.connect_ex(("127.0.0.1", port)) == 0
 
 
+# ---- silent yt-dlp auto-updater --------------------------------------------
+# Runs regardless of whether the tray backend loaded; the tray hooks into
+# _UPDATE_STATE so the menu item reflects live status without duplicating work.
+_active_relaunch_pending = threading.Event()
+
+
+def _has_active_jobs():
+    """True if a download / batch is currently in flight — auto-restart waits."""
+    with JOBS_LOCK:
+        for j in JOBS.values():
+            if j.get("status") in ("queued", "downloading", "processing"):
+                return True
+        for b in BATCH.values():
+            if b.get("status") in ("queued", "running"):
+                return True
+    return False
+
+
+def _relaunch_when_idle(notify=None):
+    """Wait for all downloads to finish, then re-exec so the new yt-dlp is
+    actually loaded in memory. Safe no-op on the first startup path where the
+    caller has already imported the fresh module from OVERRIDE_DIR."""
+    _active_relaunch_pending.set()
+    while _has_active_jobs():
+        time.sleep(3)
+    if callable(notify):
+        try:
+            notify()
+        except Exception:
+            pass
+    time.sleep(0.8)  # let the notification surface before the flash
+    args = [sys.executable] if FROZEN else [sys.executable, os.path.abspath(__file__)]
+    args.append("--autostart")  # silent relaunch — user does not see a new tab
+    try:
+        os.execv(sys.executable, args)
+    except Exception:
+        # execv can fail on some Windows shells; fall back to spawn + exit.
+        subprocess.Popen(args, close_fds=True, creationflags=NO_WINDOW)
+        os._exit(0)
+
+
+def ytdlp_autoupdater(interval_hours=6, tray_notify=None):
+    """Background worker: check PyPI on start, then every `interval_hours`.
+    Installs new versions silently into OVERRIDE_DIR and, once no jobs are
+    active, re-execs the process so they take effect. Skips work entirely
+    if the setting is off."""
+    # Small initial delay so the network check doesn't fight cold-start CPU.
+    time.sleep(6)
+    while True:
+        try:
+            if load_settings().get("auto_update_ytdlp", True):
+                with _UPDATE_LOCK:
+                    busy = _UPDATE_STATE["busy"]
+                if not busy:
+                    avail, latest = ytdlp_update_available()
+                    if avail and latest:
+                        with _UPDATE_LOCK:
+                            _UPDATE_STATE["busy"] = True
+                            _UPDATE_STATE["last_error"] = None
+                        try:
+                            _, url = latest_ytdlp()
+                            if url:
+                                install_ytdlp(url)
+                                # Fire-and-forget: relaunch once quiet. This
+                                # thread returns immediately, but the relaunch
+                                # thread will block until all jobs finish.
+                                def _notify():
+                                    if callable(tray_notify):
+                                        tray_notify(f"yt-dlp updated to {latest}. Restarting…")
+                                threading.Thread(
+                                    target=_relaunch_when_idle,
+                                    kwargs={"notify": _notify},
+                                    daemon=True,
+                                ).start()
+                        except Exception as e:
+                            with _UPDATE_LOCK:
+                                _UPDATE_STATE["last_error"] = str(e)[:200]
+                        finally:
+                            with _UPDATE_LOCK:
+                                _UPDATE_STATE["busy"] = False
+        except Exception:
+            # never let this thread die — a transient network hiccup is fine
+            pass
+        time.sleep(max(1, int(interval_hours)) * 3600)
+
+
 if __name__ == "__main__":
     import webbrowser
     port = 5006
@@ -1019,9 +1220,41 @@ if __name__ == "__main__":
     # Run the web server in the background.
     threading.Thread(target=_serve, args=(port,), daemon=True).start()
 
+    # Silent yt-dlp auto-updater — the primary defence against 403 errors when
+    # YouTube changes their site. Runs in every mode (tray, headless, dev).
+    # Tray, if loaded, will attach its notify callback below.
+    _autoupd_thread_slot = {"tray": None}
+
+    def _autoupd_notify(msg):
+        cb = _autoupd_thread_slot["tray"]
+        if cb:
+            cb(msg)
+
+    threading.Thread(
+        target=ytdlp_autoupdater,
+        kwargs={"interval_hours": 6, "tray_notify": _autoupd_notify},
+        daemon=True,
+    ).start()
+
     # Open the UI once on a normal (manual) launch, but not on silent autostart.
+    # Wait until the server is actually accepting connections, otherwise the
+    # browser can race Flask's startup and get "connection refused" (blank page)
+    # or a half-served HTML whose /static/style.css request 404s -> unstyled UI.
     if not autostart:
-        threading.Timer(1.2, lambda: webbrowser.open(f"http://127.0.0.1:{port}")).start()
+        def _open_when_ready():
+            deadline = time.time() + 20  # generous cold-start budget
+            while time.time() < deadline:
+                if _port_open(port):
+                    # Extra beat so Flask's request thread pool is warm before
+                    # the browser fires HTML + CSS + JS in parallel.
+                    time.sleep(0.2)
+                    webbrowser.open(f"http://127.0.0.1:{port}")
+                    return
+                time.sleep(0.15)
+            # Fallback: server never came up; open anyway so the user sees the
+            # browser error and can inspect it, rather than a silent no-op.
+            webbrowser.open(f"http://127.0.0.1:{port}")
+        threading.Thread(target=_open_when_ready, daemon=True).start()
 
     # System tray icon: lets the app run quietly with an explicit way to quit,
     # so there is no console window to accidentally close.
@@ -1080,23 +1313,10 @@ if __name__ == "__main__":
             ),
         )
 
-        def _check_updates():
-            # check shortly after launch, then once a day
-            time.sleep(8)
-            while True:
-                try:
-                    avail, latest = ytdlp_update_available()
-                    if avail and not upd["available"]:
-                        upd["available"], upd["version"] = True, latest
-                        tray.update_menu()
-                        tray.notify(
-                            f"yt-dlp {latest} is available. Open the tray menu and click "
-                            f"“Update yt-dlp” to install.", "Stream Studio update")
-                except Exception:
-                    pass
-                time.sleep(24 * 3600)
+        # Hand the tray notifier to the auto-updater so silent updates surface
+        # a discreet toast ("yt-dlp updated to X. Restarting…").
+        _autoupd_thread_slot["tray"] = lambda msg: tray.notify(msg, "Stream Studio")
 
-        threading.Thread(target=_check_updates, daemon=True).start()
         tray.run()  # blocks until Quit
     except Exception:
         # No tray backend available -> keep the process alive serving.

@@ -718,3 +718,123 @@ function renderBatchQueue(b) {
     if (ytReady) tryLoad(); else setTimeout(tryLoad, 900);
   }
 })();
+
+/* ---- yt-dlp update banner + settings dialog ---------------------------- */
+(function () {
+  const banner   = document.getElementById("updBanner");
+  const btnUpd   = document.getElementById("updBtn");
+  const btnHide  = document.getElementById("updDismiss");
+  const elCur    = document.getElementById("updCurrent");
+  const elLat    = document.getElementById("updLatest");
+  const btnSet   = document.getElementById("settingsBtn");
+  const dlg      = document.getElementById("settingsDlg");
+  const selCk    = document.getElementById("setCookies");
+  const chkAuto  = document.getElementById("setAutoUpd");
+  const formSet  = dlg ? dlg.querySelector("form") : null;
+
+  const DISMISS_KEY = "ss.updDismissedFor";
+
+  function showBanner(v) {
+    if (!banner || !v || !v.update_available) return;
+    if (localStorage.getItem(DISMISS_KEY) === v.latest) return;
+    elCur.textContent = v.ytdlp || "?";
+    elLat.textContent = v.latest;
+    banner.hidden = false;
+    banner.classList.remove("done", "error", "updating");
+  }
+
+  async function pollVersion() {
+    try {
+      const r = await fetch("/api/version", { cache: "no-store" });
+      const v = await r.json();
+      showBanner(v);
+      return v;
+    } catch { return null; }
+  }
+
+  if (btnHide) btnHide.addEventListener("click", () => {
+    localStorage.setItem(DISMISS_KEY, elLat.textContent || "");
+    banner.hidden = true;
+  });
+
+  if (btnUpd) btnUpd.addEventListener("click", async () => {
+    banner.classList.add("updating");
+    btnUpd.textContent = "Updating…";
+    try {
+      await fetch("/api/update_ytdlp", { method: "POST" });
+      // Poll until update worker reports done or errors.
+      const finish = () => {
+        clearInterval(iv);
+        banner.classList.remove("updating");
+      };
+      const iv = setInterval(async () => {
+        const v = await pollVersion();
+        if (!v) return;
+        if (v.busy) return;
+        finish();
+        if (v.last_error) {
+          banner.classList.add("error");
+          btnUpd.textContent = "Retry";
+          elLat.textContent = v.latest || "";
+          banner.querySelector(".upd-msg").innerHTML =
+            "<b>Update failed.</b> <small>" + escapeHtml(v.last_error) + "</small>";
+        } else {
+          banner.classList.add("done");
+          banner.querySelector(".upd-msg").innerHTML =
+            "<b>yt-dlp updated to " + escapeHtml(v.latest || "") + ".</b> " +
+            "<small>Restart Stream Studio to load the new version.</small>";
+          btnUpd.remove();
+        }
+      }, 1200);
+    } catch (e) {
+      banner.classList.remove("updating");
+      banner.classList.add("error");
+      btnUpd.textContent = "Retry";
+    }
+  });
+
+  // ---- settings dialog ----
+  async function loadSettings() {
+    try {
+      const r = await fetch("/api/settings", { cache: "no-store" });
+      const s = await r.json();
+      if (selCk) selCk.value = s.cookies_from_browser || "";
+      if (chkAuto) chkAuto.checked = (s.auto_update_ytdlp !== false);
+    } catch {}
+  }
+
+  async function saveSettings() {
+    try {
+      await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          cookies_from_browser: selCk.value || "",
+          auto_update_ytdlp: !!(chkAuto && chkAuto.checked),
+        }),
+      });
+    } catch {}
+  }
+
+  if (btnSet && dlg) {
+    btnSet.addEventListener("click", async () => {
+      await loadSettings();
+      if (typeof dlg.showModal === "function") dlg.showModal();
+      else dlg.setAttribute("open", "");
+    });
+    if (formSet) formSet.addEventListener("submit", (ev) => {
+      // <button value="save"> vs value="cancel"
+      const submitter = ev.submitter;
+      if (submitter && submitter.value === "save") saveSettings();
+    });
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, (c) => (
+      { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
+    ));
+  }
+
+  // Kick off version check shortly after the page loads.
+  setTimeout(pollVersion, 400);
+})();

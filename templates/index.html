@@ -6,7 +6,7 @@
 <title>Stream Studio — Download · Clip · Convert from any site</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/style.css?v=3">
 </head>
 <body>
 <div class="bg-orbs"><span></span><span></span><span></span></div>
@@ -16,8 +16,56 @@
     <div class="logo-mark"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M4 4l16 8-16 8z" fill="currentColor"/></svg></div>
     <div><b>Stream <span style="color:var(--acc2)">Studio</span></b><small>any site · clip · convert</small></div>
   </div>
-  <div class="badge">local · ffmpeg + yt-dlp</div>
+  <div class="topbar-actions">
+    <button id="settingsBtn" class="btn ghost" type="button" title="Settings">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3h.1a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9v.1a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+      <span class="btn-label">Settings</span>
+    </button>
+    <div class="badge">local · ffmpeg + yt-dlp</div>
+  </div>
 </header>
+
+<!-- yt-dlp update banner (hidden until /api/version reports one) -->
+<div id="updBanner" class="upd-banner" hidden>
+  <span class="upd-msg">
+    <b>yt-dlp <span id="updLatest"></span></b> is available
+    <small>(you have <span id="updCurrent"></span>). Updating fixes most YouTube 403 errors.</small>
+  </span>
+  <button id="updBtn" class="btn primary sm" type="button">Update now</button>
+  <button id="updDismiss" class="btn ghost sm" type="button" aria-label="Dismiss">×</button>
+</div>
+
+<!-- Settings dialog -->
+<dialog id="settingsDlg" class="glass settings-dlg">
+  <form method="dialog" class="settings-form">
+    <h3>Settings</h3>
+    <label class="settings-field toggle">
+      <input id="setAutoUpd" type="checkbox">
+      <span class="tgl-copy">
+        <b>Keep yt-dlp up to date automatically</b>
+        <small>Checked on start-up and every 6 hours. Silently installs the fix and re-launches Stream Studio the moment nothing is downloading. Turn this off only if you know what you're doing — most 403 errors come from a stale yt-dlp.</small>
+      </span>
+    </label>
+    <label class="settings-field">
+      <span>Load cookies from browser</span>
+      <select id="setCookies">
+        <option value="">Off (no cookies)</option>
+        <option value="chrome">Chrome</option>
+        <option value="edge">Edge</option>
+        <option value="firefox">Firefox</option>
+        <option value="brave">Brave</option>
+        <option value="chromium">Chromium</option>
+        <option value="opera">Opera</option>
+        <option value="vivaldi">Vivaldi</option>
+      </select>
+      <small>Fixes age-gated, region-locked, member-only, and login-required videos. The browser must be signed in and, for Chrome/Edge/Brave, closed while downloading.</small>
+    </label>
+    <div class="settings-actions">
+      <button id="setSave" class="btn primary" value="save">Save</button>
+      <button class="btn ghost" value="cancel">Cancel</button>
+    </div>
+  </form>
+</dialog>
 
 <main class="wrap">
 
@@ -216,6 +264,6 @@
 <footer class="foot muted small">Runs entirely on your machine · for content you have the rights to use.</footer>
 
 <script src="https://www.youtube.com/iframe_api"></script>
-<script src="/static/app.js"></script>
+<script src="/static/app.js?v=3"></script>
 </body>
 </html>
