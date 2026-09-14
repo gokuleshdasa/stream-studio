@@ -707,16 +707,24 @@ function renderBatchQueue(b) {
   });
 }
 
-/* ---------- prefill from the browser extension (?u=<url>&dl=1) ---------- */
+/* ---------- prefill from the browser extension (?u=<url>&dl=1|batch=1) ---------- */
 (function initFromQuery() {
   const q = new URLSearchParams(location.search);
   const u = q.get("u");
-  if (u) {
-    $("#url").value = u;
-    window.__AUTO_DL = q.get("dl") === "1";   // one-click download from the page button
-    const tryLoad = () => { loadUrl(); };
-    if (ytReady) tryLoad(); else setTimeout(tryLoad, 900);
+  if (!u) return;
+  const wantBatch = q.get("batch") === "1";
+  if (wantBatch) {
+    // Channel / playlist / listing URL — go straight to Batch and Fetch.
+    setTab("batch");
+    $("#batchUrls").value = u;
+    $("#url").value = "";
+    setTimeout(fetchBatch, 300);
+    return;
   }
+  $("#url").value = u;
+  window.__AUTO_DL = q.get("dl") === "1";   // one-click download from the page button
+  const tryLoad = () => { loadUrl(); };
+  if (ytReady) tryLoad(); else setTimeout(tryLoad, 900);
 })();
 
 /* ---- yt-dlp update banner + settings dialog ---------------------------- */

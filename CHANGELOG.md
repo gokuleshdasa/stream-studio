@@ -1,5 +1,25 @@
 # Stream Studio — Changelog
 
+## 1.6.3 — 2026-09-14
+
+Single vs Batch — pruning the noise.
+
+- **CSS bug:** `#batchInput` had `display:flex` on the id, which overrode
+  the `hidden` attribute — so the "Paste links here" textarea and **Fetch
+  list** button were visible on the Single tab. Same class of bug hit the
+  update banners (`.upd-banner{display:flex}`). Both now use
+  `:not([hidden]){display:flex}` so `hidden` actually hides them.
+- **Chrome extension no longer double-buttons a video page.** The corner
+  "Download" pill was showing on YouTube watch pages alongside the on-video
+  hover button. The pill now only surfaces on **listing** URLs (channel,
+  `/@handle`, `/playlist`, `/c/`, `/user/`, Vimeo channels, etc.). Single
+  videos keep just the on-video hover button.
+- **The pill sends a batch flag.** Clicking it on a channel page opens the
+  app with `?u=…&batch=1`. The app switches to the Batch tab and
+  auto-fetches the list — no more spinner spinning forever because a
+  channel URL was fed into the single-item info endpoint.
+- Extension version 2.0.0 → 2.0.1.
+
 ## 1.6.2 — 2026-09-14
 **Stream Studio now self-updates itself, not just yt-dlp.** True zero-touch.
 

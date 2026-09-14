@@ -100,7 +100,7 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
       .then(r => reply && reply(r)).catch(e => reply && reply({ error: String(e) }));
     return true;
   }
-  if (msg.type === "openApp") { openApp(msg.url); reply && reply({ ok: true }); return true; }
+  if (msg.type === "openApp") { openApp(msg.url, !!msg.batch); reply && reply({ ok: true }); return true; }
   if (msg.type === "zipBundle") {
     zipBundle(msg.items || [], msg.referer || (sender.tab && sender.tab.url), tabId)
       .then(r => reply && reply(r)).catch(e => reply && reply({ error: String(e) }));
@@ -147,8 +147,11 @@ function port(cb) {
   try { chrome.storage.local.get("port", d => cb(d.port || "5006")); }
   catch { cb("5006"); }
 }
-function openApp(u) {
-  port(p => chrome.tabs.create({ url: `http://127.0.0.1:${p}/?u=${encodeURIComponent(u)}&dl=1` }));
+function openApp(u, batch) {
+  // For a channel / playlist / listing URL, route the app to its Batch tab.
+  // Do NOT pass dl=1 — batch flow needs the user to review the item list first.
+  const qs = batch ? "&batch=1" : "&dl=1";
+  port(p => chrome.tabs.create({ url: `http://127.0.0.1:${p}/?u=${encodeURIComponent(u)}${qs}` }));
 }
 function cookieHeader(url) {
   return new Promise(res => {

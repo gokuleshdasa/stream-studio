@@ -20,8 +20,8 @@ from pathlib import Path
 # A newer yt-dlp can be unpacked into this user-writable folder; if present it
 # is loaded INSTEAD of the copy frozen inside the .exe, so the app keeps working
 # when YouTube changes without us shipping a whole new build.
-EXTENSION_VERSION = "1.2.0"  # version of the chrome-extension shipped with this app
-APP_VERSION = "1.6.2"        # keep in sync with installer.iss AppVersion
+EXTENSION_VERSION = "2.0.1"  # version of the chrome-extension shipped with this app
+APP_VERSION = "1.6.3"        # keep in sync with installer.iss AppVersion
 GITHUB_REPO = "gokuleshdasa/stream-studio"
 
 def _override_dir():

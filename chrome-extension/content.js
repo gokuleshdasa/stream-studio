@@ -77,18 +77,49 @@
   }
 
   // ---- supported-site pill ----
+  // We only surface the corner pill on LISTING pages (channel / playlist /
+  // search / user page) — a single-video page already has the on-video hover
+  // button, so a second corner pill is just noise. The batch flag routes the
+  // app to its Batch tab so a channel URL doesn't get treated as one video
+  // and hang forever on /api/info.
+  function isBatchUrl(url) {
+    try {
+      const u = new URL(url);
+      const path = u.pathname;
+      // YouTube: watch pages, youtu.be short links, and /shorts/ are single.
+      // Everything else on YouTube (channel, @handle, /playlist, /c/, /user/)
+      // is batch.
+      if (/(^|\.)youtube\.com$/i.test(u.hostname)) {
+        if (path === "/watch" && u.searchParams.get("v")) return false;
+        if (/^\/shorts\//i.test(path)) return false;
+        return true; // /playlist, /@handle, /channel/, /c/, /user/ etc.
+      }
+      if (u.hostname === "youtu.be") return false; // always a single video
+      // Vimeo: /12345 is single, /channels/... is batch.
+      if (/(^|\.)vimeo\.com$/i.test(u.hostname)) {
+        if (/^\/\d+/.test(path)) return false;
+        return /channels?|showcase|album|user/i.test(path);
+      }
+      // Direct media file URL is always single.
+      if (/\.(mp4|m4v|webm|mkv|mov|mp3|m4a|aac|ogg|opus|flac|wav|m3u8|mpd)(\?|#|$)/i.test(path)) return false;
+      // Generic heuristic: URL path names hint at listings.
+      return /(playlist|channel|videos?\/?$|user\/|profile|category|tag\/|search)/i.test(path + u.search);
+    } catch { return false; }
+  }
   async function supported(u) { try { const r = await fetch(`${base()}/api/supported?u=${encodeURIComponent(u)}`, { cache: "no-store" }); return (await r.json()).supported === true; } catch { return false; } }
   let lastHref = "";
   async function pillCheck() {
     if (!TOP) return;
     const href = location.href; if (href === lastHref) return; lastHref = href;
     const ex = document.getElementById("ss-pill");
+    // Skip pill on single-media pages — hover button already covers them.
+    if (!isBatchUrl(href)) { if (ex) ex.remove(); return; }
     if (await supported(href)) { if (!ex) makePill(); } else if (ex) ex.remove();
   }
   function makePill() {
     const p = document.createElement("div"); p.id = "ss-pill";
-    p.innerHTML = `<button class="ss-pill-btn"><span class="ss-ic">⬇</span><span>Download</span></button><button class="ss-pill-x" title="Hide">✕</button>`;
-    p.querySelector(".ss-pill-btn").addEventListener("click", () => send("openApp", { url: location.href }));
+    p.innerHTML = `<button class="ss-pill-btn"><span class="ss-ic">⬇</span><span>Fetch list</span></button><button class="ss-pill-x" title="Hide">✕</button>`;
+    p.querySelector(".ss-pill-btn").addEventListener("click", () => send("openApp", { url: location.href, batch: true }));
     p.querySelector(".ss-pill-x").addEventListener("click", () => p.remove());
     document.body.appendChild(p); requestAnimationFrame(() => p.classList.add("in"));
   }

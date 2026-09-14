@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Stream Studio — Media Downloader",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Download audio & video from any page. Auto-detects media, shows a hover Download button (IDM-style), a right-click menu, and a list of everything found. Sends to your local Stream Studio app.",
   "action": {
     "default_popup": "popup.html",
