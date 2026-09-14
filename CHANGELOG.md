@@ -1,5 +1,23 @@
 # Stream Studio — Changelog
 
+## 1.6.2 — 2026-09-14
+**Stream Studio now self-updates itself, not just yt-dlp.** True zero-touch.
+
+- Background thread also polls `GET
+  api.github.com/repos/gokuleshdasa/stream-studio/releases/latest` on the
+  same 6-hour cadence. Newer tag → downloads `StreamStudio-Setup.exe` to
+  `%TEMP%` and, once no jobs are active, runs it silently
+  (`/VERYSILENT /SUPPRESSMSGBOXES /NORESTART`). Inno Setup closes the running
+  exe, replaces files, re-launches with `--autostart`.
+- Tray toasts: "Downloading Stream Studio X.Y.Z…", "Installing Stream Studio
+  X.Y.Z…". No dialog.
+- Web-UI teal **"Install & restart"** banner is the manual fallback.
+- Settings dialog adds a toggle: **Keep Stream Studio itself up to date
+  automatically** (default on). Persisted alongside the yt-dlp toggle.
+- New endpoint `POST /api/update_app` mirrors `/api/update_ytdlp`.
+- `/api/version` now also returns `app_version`, `app_latest`,
+  `app_update_available`.
+
 ## 1.6.1 — 2026-09-14
 Bug fix: `/api/version` route was defined twice after the 1.6.0 refactor, so
 the app failed to start on fresh installs with `AssertionError: View function

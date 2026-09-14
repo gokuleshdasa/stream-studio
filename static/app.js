@@ -730,6 +730,12 @@ function renderBatchQueue(b) {
   const dlg      = document.getElementById("settingsDlg");
   const selCk    = document.getElementById("setCookies");
   const chkAuto  = document.getElementById("setAutoUpd");
+  const chkApp   = document.getElementById("setAutoApp");
+  const appBanner   = document.getElementById("appBanner");
+  const appBtn     = document.getElementById("appBtn");
+  const appHide    = document.getElementById("appDismiss");
+  const appLat     = document.getElementById("appLatest");
+  const appCur     = document.getElementById("appCurrent");
   const formSet  = dlg ? dlg.querySelector("form") : null;
 
   const DISMISS_KEY = "ss.updDismissedFor";
@@ -743,14 +749,52 @@ function renderBatchQueue(b) {
     banner.classList.remove("done", "error", "updating");
   }
 
+  const APP_DISMISS_KEY = "ss.appUpdDismissedFor";
+  function showAppBanner(v) {
+    if (!appBanner || !v || !v.app_update_available) return;
+    if (localStorage.getItem(APP_DISMISS_KEY) === v.app_latest) return;
+    appCur.textContent = v.app_version || "?";
+    appLat.textContent = v.app_latest;
+    appBanner.hidden = false;
+    appBanner.classList.remove("done", "error", "updating");
+  }
+
   async function pollVersion() {
     try {
       const r = await fetch("/api/version", { cache: "no-store" });
       const v = await r.json();
       showBanner(v);
+      showAppBanner(v);
       return v;
     } catch { return null; }
   }
+
+  if (appHide) appHide.addEventListener("click", () => {
+    localStorage.setItem(APP_DISMISS_KEY, appLat.textContent || "");
+    appBanner.hidden = true;
+  });
+
+  if (appBtn) appBtn.addEventListener("click", async () => {
+    appBanner.classList.add("updating");
+    appBtn.textContent = "Downloading…";
+    try {
+      await fetch("/api/update_app", { method: "POST" });
+      // Once the installer launches, it kills this Flask server. The banner
+      // simply stops updating. Show a hint after 30s if the app didn't restart.
+      setTimeout(() => {
+        if (!appBanner.hidden) {
+          appBanner.querySelector(".upd-msg").innerHTML =
+            "<b>Installer is running…</b> " +
+            "<small>Stream Studio will close and reopen when the upgrade is done. " +
+            "If a download is still in progress, the upgrade waits for it to finish.</small>";
+        }
+      }, 30000);
+    } catch (e) {
+      appBanner.classList.remove("updating");
+      appBanner.classList.add("error");
+      appBtn.textContent = "Retry";
+    }
+  });
 
   if (btnHide) btnHide.addEventListener("click", () => {
     localStorage.setItem(DISMISS_KEY, elLat.textContent || "");
@@ -800,6 +844,7 @@ function renderBatchQueue(b) {
       const s = await r.json();
       if (selCk) selCk.value = s.cookies_from_browser || "";
       if (chkAuto) chkAuto.checked = (s.auto_update_ytdlp !== false);
+      if (chkApp)  chkApp.checked  = (s.auto_update_app !== false);
     } catch {}
   }
 
@@ -811,6 +856,7 @@ function renderBatchQueue(b) {
         body: JSON.stringify({
           cookies_from_browser: selCk.value || "",
           auto_update_ytdlp: !!(chkAuto && chkAuto.checked),
+          auto_update_app:   !!(chkApp && chkApp.checked),
         }),
       });
     } catch {}

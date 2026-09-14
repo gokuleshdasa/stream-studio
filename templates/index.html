@@ -6,7 +6,7 @@
 <title>Stream Studio — Download · Clip · Convert from any site</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/style.css?v=3">
+<link rel="stylesheet" href="/static/style.css?v=4">
 </head>
 <body>
 <div class="bg-orbs"><span></span><span></span><span></span></div>
@@ -35,6 +35,16 @@
   <button id="updDismiss" class="btn ghost sm" type="button" aria-label="Dismiss">×</button>
 </div>
 
+<!-- App update banner (hidden until /api/version reports one) -->
+<div id="appBanner" class="upd-banner app" hidden>
+  <span class="upd-msg">
+    <b>Stream Studio <span id="appLatest"></span></b> is available
+    <small>(you have <span id="appCurrent"></span>). Silent install — the app restarts itself when no download is in flight.</small>
+  </span>
+  <button id="appBtn" class="btn primary sm" type="button">Install &amp; restart</button>
+  <button id="appDismiss" class="btn ghost sm" type="button" aria-label="Dismiss">×</button>
+</div>
+
 <!-- Settings dialog -->
 <dialog id="settingsDlg" class="glass settings-dlg">
   <form method="dialog" class="settings-form">
@@ -44,6 +54,13 @@
       <span class="tgl-copy">
         <b>Keep yt-dlp up to date automatically</b>
         <small>Checked on start-up and every 6 hours. Silently installs the fix and re-launches Stream Studio the moment nothing is downloading. Turn this off only if you know what you're doing — most 403 errors come from a stale yt-dlp.</small>
+      </span>
+    </label>
+    <label class="settings-field toggle">
+      <input id="setAutoApp" type="checkbox">
+      <span class="tgl-copy">
+        <b>Keep Stream Studio itself up to date automatically</b>
+        <small>Same schedule. Downloads the newest installer from GitHub Releases and runs it silently once no download is in flight — the app closes, upgrades, and re-launches on its own.</small>
       </span>
     </label>
     <label class="settings-field">
@@ -264,6 +281,6 @@
 <footer class="foot muted small">Runs entirely on your machine · for content you have the rights to use.</footer>
 
 <script src="https://www.youtube.com/iframe_api"></script>
-<script src="/static/app.js?v=3"></script>
+<script src="/static/app.js?v=4"></script>
 </body>
 </html>

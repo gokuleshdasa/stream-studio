@@ -21,6 +21,8 @@ from pathlib import Path
 # is loaded INSTEAD of the copy frozen inside the .exe, so the app keeps working
 # when YouTube changes without us shipping a whole new build.
 EXTENSION_VERSION = "1.2.0"  # version of the chrome-extension shipped with this app
+APP_VERSION = "1.6.2"        # keep in sync with installer.iss AppVersion
+GITHUB_REPO = "gokuleshdasa/stream-studio"
 
 def _override_dir():
     base = os.environ.get("LOCALAPPDATA") or str(Path.home())
@@ -132,6 +134,10 @@ _SETTINGS_DEFAULTS = {
     # breaks the extractor every couple of weeks and 403s follow. On is what
     # end users actually want.
     "auto_update_ytdlp": True,
+    # Same principle: keep the app itself fresh. Downloads the new installer
+    # from GitHub Releases when a newer tagged version ships, then re-execs
+    # via the silent installer once nothing is downloading.
+    "auto_update_app": True,
 }
 
 
@@ -399,6 +405,13 @@ def api_version():
     except Exception:
         pass
     update_available = bool(latest) and _ver_tuple(latest) > _ver_tuple(cur)
+    # App update — best-effort, never blocks. Nightly builds skip this check
+    # because their fabricated version tuple would appear ahead of GitHub.
+    app_avail, app_latest, _app_url = False, None, None
+    try:
+        app_avail, app_latest, _app_url = app_update_available()
+    except Exception:
+        pass
     resp = jsonify({
         "extension_version": EXTENSION_VERSION,
         "ytdlp_current": cur,
@@ -408,9 +421,46 @@ def api_version():
         "wheel": wheel if update_available else None,
         "busy": _UPDATE_STATE["busy"],
         "last_error": _UPDATE_STATE["last_error"],
+        # App self-update fields
+        "app_version": APP_VERSION,
+        "app_latest": app_latest,
+        "app_update_available": app_avail,
+        "app_update_busy": _APP_UPDATE_STATE["busy"],
+        "app_update_error": _APP_UPDATE_STATE["last_error"],
     })
     resp.headers["Access-Control-Allow-Origin"] = "*"
     return resp
+
+
+@app.route("/api/update_app", methods=["POST"])
+def api_update_app():
+    """Download the newest GitHub release installer and, once no jobs are
+    active, silently run it — the installer closes this process, replaces
+    the exe, and re-launches with --autostart. Returns immediately."""
+    with _APP_UPDATE_LOCK:
+        if _APP_UPDATE_STATE["busy"]:
+            return jsonify({"status": "busy"}), 202
+        _APP_UPDATE_STATE["busy"] = True
+        _APP_UPDATE_STATE["last_error"] = None
+
+    def worker():
+        try:
+            _, url = latest_app_release()
+            if not url:
+                raise RuntimeError("no StreamStudio-Setup.exe asset on the latest release")
+            installer = _download_installer(url)
+            _APP_UPDATE_STATE["downloaded"] = str(installer)
+            # Wait for downloads to finish, then re-exec via installer.
+            while _has_active_jobs():
+                time.sleep(3)
+            _launch_installer_and_exit(installer)
+        except Exception as e:
+            _APP_UPDATE_STATE["last_error"] = str(e)[:200]
+        finally:
+            _APP_UPDATE_STATE["busy"] = False
+
+    threading.Thread(target=worker, daemon=True).start()
+    return jsonify({"status": "started"})
 
 
 # Cache of which URLs are handled by a dedicated extractor (browser button uses this).
@@ -448,6 +498,61 @@ def _url_supported(u):
 # ---- version / update / settings endpoints ---------------------------------
 _UPDATE_STATE = {"busy": False, "last_error": None}
 _UPDATE_LOCK = threading.Lock()
+
+# App self-update state (separate lock from yt-dlp updater so they can run in
+# parallel without contending — yt-dlp updates in-memory, app update replaces
+# the exe itself, so serialising them adds no safety).
+_APP_UPDATE_STATE = {"busy": False, "last_error": None, "downloaded": None}
+_APP_UPDATE_LOCK = threading.Lock()
+
+
+def latest_app_release():
+    """Return (tag_without_v, setup_download_url) for the newest GitHub release.
+    Raises on network failure — callers should catch."""
+    req = urllib.request.Request(
+        f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest",
+        headers={"User-Agent": "StreamStudio-Updater", "Accept": "application/vnd.github+json"},
+    )
+    with urllib.request.urlopen(req, timeout=15) as r:
+        data = json.load(r)
+    tag = (data.get("tag_name") or "").lstrip("vV")
+    setup_url = None
+    for a in data.get("assets") or []:
+        if (a.get("name") or "").lower() == "streamstudio-setup.exe":
+            setup_url = a.get("browser_download_url")
+            break
+    return tag, setup_url
+
+
+def app_update_available():
+    try:
+        tag, url = latest_app_release()
+        return (bool(tag) and _ver_tuple(tag) > _ver_tuple(APP_VERSION)), tag, url
+    except Exception:
+        return False, None, None
+
+
+def _download_installer(url):
+    """Fetch the setup exe to a stable temp path. Returns the local Path."""
+    req = urllib.request.Request(url, headers={"User-Agent": "StreamStudio-Updater"})
+    dst = Path(tempfile.gettempdir()) / "StreamStudio-Setup-latest.exe"
+    with urllib.request.urlopen(req, timeout=600) as r, open(dst, "wb") as f:
+        shutil.copyfileobj(r, f)
+    return dst
+
+
+def _launch_installer_and_exit(installer_path):
+    """Spawn the silent installer detached and quit — the installer will close
+    the current process cleanly if it needs to, replace files, then use the
+    [Run] section in installer.iss to re-launch with --autostart."""
+    args = [str(installer_path),
+            "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART",
+            "/TASKS=startup,desktopicon"]
+    # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP so it survives our exit.
+    DETACHED = 0x00000008 | 0x00000200
+    subprocess.Popen(args, close_fds=True, creationflags=DETACHED | NO_WINDOW)
+    time.sleep(0.5)
+    os._exit(0)
 
 
 @app.route("/api/update_ytdlp", methods=["POST"])
@@ -1203,6 +1308,43 @@ def ytdlp_autoupdater(interval_hours=6, tray_notify=None):
         except Exception:
             # never let this thread die — a transient network hiccup is fine
             pass
+
+        # ---- App self-update ----------------------------------------------
+        # Runs from the same loop but under its own lock; a failed check does
+        # not affect the yt-dlp path above. The app update replaces the exe,
+        # so we do it AFTER the yt-dlp cycle to avoid discarding a fresh
+        # yt-dlp install we just made.
+        try:
+            if load_settings().get("auto_update_app", True):
+                with _APP_UPDATE_LOCK:
+                    app_busy = _APP_UPDATE_STATE["busy"]
+                if not app_busy:
+                    avail, tag, url = app_update_available()
+                    if avail and url:
+                        with _APP_UPDATE_LOCK:
+                            _APP_UPDATE_STATE["busy"] = True
+                            _APP_UPDATE_STATE["last_error"] = None
+
+                        def _app_worker(_tag=tag, _url=url):
+                            try:
+                                if callable(tray_notify):
+                                    tray_notify(f"Downloading Stream Studio {_tag}…")
+                                installer = _download_installer(_url)
+                                _APP_UPDATE_STATE["downloaded"] = str(installer)
+                                while _has_active_jobs():
+                                    time.sleep(5)
+                                if callable(tray_notify):
+                                    tray_notify(f"Installing Stream Studio {_tag}…")
+                                time.sleep(0.8)
+                                _launch_installer_and_exit(installer)
+                            except Exception as e:
+                                _APP_UPDATE_STATE["last_error"] = str(e)[:200]
+                            finally:
+                                _APP_UPDATE_STATE["busy"] = False
+                        threading.Thread(target=_app_worker, daemon=True).start()
+        except Exception:
+            pass
+
         time.sleep(max(1, int(interval_hours)) * 3600)
 
 
