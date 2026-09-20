@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Stream Studio — Download, clip & convert media from any site</title>
+<meta name="description" content="Local Windows app. Paste a link from YouTube, SoundCloud, Vimeo, or 1,800+ other sites — mark clips on a timeline, export the exact audio/video, format and bitrate you want. Free, MIT-licensed, self-updating.">
+<meta property="og:title" content="Stream Studio — Download, clip & convert media from any site">
+<meta property="og:description" content="Local Windows app. 1,800+ sites. Live preview, timeline editor, MP3/MP4/etc, self-updating. Free.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://gokuleshdasa.github.io/stream-studio/">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg1:#0b0916; --bg2:#150e28; --panel:rgba(255,255,255,.04);
+    --stroke:rgba(255,255,255,.08); --ink:#f4f2ff; --muted:#a89fc8;
+    --acc:#7c5cff; --acc2:#ff5ca8; --acc3:#19d3da; --acc4:#37e29a;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:var(--bg1);color:var(--ink);
+    font-family:'Inter',system-ui,sans-serif;font-size:15px;line-height:1.55;
+    -webkit-font-smoothing:antialiased}
+  body{background:
+    radial-gradient(1200px 700px at 15% -10%,rgba(124,92,255,.30),transparent 60%),
+    radial-gradient(900px 600px at 100% 10%,rgba(255,92,168,.20),transparent 60%),
+    radial-gradient(800px 500px at 50% 100%,rgba(25,211,218,.15),transparent 60%),
+    var(--bg1)}
+  a{color:var(--acc3);text-decoration:none}
+  a:hover{text-decoration:underline}
+  h1,h2,h3{font-family:'Space Grotesk',sans-serif;font-weight:700;letter-spacing:-.01em;margin:0}
+  h1{font-size:56px;line-height:1.05}
+  h2{font-size:32px;margin-bottom:14px}
+  h3{font-size:18px;margin-bottom:6px}
+  small{color:var(--muted)}
+  .wrap{max-width:1120px;margin:0 auto;padding:0 24px}
+
+  /* ---- header ---- */
+  header{padding:20px 0;position:sticky;top:0;z-index:5;
+    background:linear-gradient(to bottom,rgba(11,9,22,.85),rgba(11,9,22,0));backdrop-filter:blur(8px)}
+  .nav{display:flex;align-items:center;gap:14px}
+  .brand{display:flex;align-items:center;gap:12px;font-family:'Space Grotesk';font-weight:700;font-size:18px}
+  .logo{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--acc),var(--acc2));
+    display:grid;place-items:center;color:#fff}
+  .nav-links{margin-left:auto;display:flex;gap:22px;font-size:14px;color:var(--muted)}
+  .nav-links a{color:inherit}
+  .nav-links a:hover{color:var(--ink)}
+
+  /* ---- hero ---- */
+  .hero{padding:60px 0 40px;text-align:center}
+  .hero .eyebrow{display:inline-block;padding:5px 14px;border-radius:99px;
+    background:rgba(124,92,255,.15);border:1px solid rgba(124,92,255,.35);
+    font-size:12px;font-weight:600;letter-spacing:.03em;color:#d3c7ff;margin-bottom:22px}
+  .hero h1 span{background:linear-gradient(135deg,var(--acc),var(--acc2) 55%,var(--acc3));
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero .lede{max-width:640px;margin:22px auto 32px;color:var(--muted);font-size:18px;line-height:1.6}
+  .cta{display:inline-flex;align-items:center;gap:10px;padding:16px 28px;border-radius:14px;
+    background:linear-gradient(135deg,var(--acc),var(--acc2));color:#fff;
+    font-family:'Space Grotesk';font-weight:700;font-size:16px;text-decoration:none;
+    box-shadow:0 10px 30px -8px rgba(124,92,255,.55);transition:transform .12s ease}
+  .cta:hover{transform:translateY(-1px);text-decoration:none}
+  .cta.ghost{background:transparent;border:1px solid var(--stroke);color:var(--ink);box-shadow:none;margin-left:10px}
+  .cta.ghost:hover{background:rgba(255,255,255,.04)}
+  .meta-row{margin-top:16px;font-size:13px;color:var(--muted);display:flex;gap:14px;justify-content:center;flex-wrap:wrap}
+  .meta-row b{color:#d3c7ff}
+
+  /* ---- screenshot ---- */
+  .shot{margin:40px auto 20px;max-width:960px;
+    border-radius:16px;overflow:hidden;border:1px solid var(--stroke);
+    box-shadow:0 40px 80px -20px rgba(0,0,0,.5), 0 0 60px rgba(124,92,255,.15)}
+  .shot-inner{aspect-ratio:16/9;background:
+    radial-gradient(600px 400px at 20% 20%,rgba(124,92,255,.35),transparent 60%),
+    radial-gradient(500px 350px at 80% 30%,rgba(255,92,168,.25),transparent 60%),
+    #0f0a1e;
+    display:grid;place-items:center;color:var(--muted);font-size:14px;padding:20px;text-align:center}
+  .shot-inner b{display:block;color:#eae4ff;font-family:'Space Grotesk';font-size:22px;margin-bottom:6px}
+
+  /* ---- features ---- */
+  section{padding:60px 0}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:20px;margin-top:32px}
+  .card{padding:24px;border-radius:16px;background:var(--panel);border:1px solid var(--stroke);
+    transition:transform .12s ease, border-color .12s ease}
+  .card:hover{transform:translateY(-2px);border-color:rgba(124,92,255,.35)}
+  .card .ic{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;color:#fff;
+    background:linear-gradient(135deg,var(--acc),var(--acc2));margin-bottom:14px;font-size:18px;font-weight:700}
+  .card.tealic .ic{background:linear-gradient(135deg,var(--acc3),var(--acc4))}
+  .card.pinkic .ic{background:linear-gradient(135deg,var(--acc2),#ffb020)}
+  .card p{margin:6px 0 0;color:var(--muted);font-size:14px}
+
+  /* ---- steps ---- */
+  .steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:20px;margin-top:24px}
+  .step{padding:22px;border-radius:14px;background:var(--panel);border:1px solid var(--stroke);position:relative}
+  .step .num{position:absolute;top:-14px;left:22px;width:34px;height:34px;border-radius:50%;
+    background:var(--bg1);border:2px solid var(--acc);display:grid;place-items:center;
+    font-family:'Space Grotesk';font-weight:700;color:var(--acc)}
+  .step h3{margin-top:6px}
+
+  /* ---- code / faq ---- */
+  code{background:rgba(0,0,0,.35);padding:2px 7px;border-radius:5px;font-family:ui-monospace,monospace;font-size:13px;color:#eae4ff}
+  details{margin-bottom:12px;padding:14px 16px;border-radius:12px;background:var(--panel);border:1px solid var(--stroke)}
+  details summary{cursor:pointer;font-family:'Space Grotesk';font-weight:600;font-size:15px;list-style:none}
+  details summary::-webkit-details-marker{display:none}
+  details[open] summary{margin-bottom:8px;color:#d3c7ff}
+  details p{margin:0;color:var(--muted);font-size:14px}
+  details a{color:var(--acc3)}
+
+  /* ---- footer ---- */
+  footer{padding:40px 0 30px;border-top:1px solid var(--stroke);margin-top:20px;text-align:center;color:var(--muted);font-size:13px}
+  footer a{color:var(--muted)}
+  footer a:hover{color:var(--ink)}
+
+  @media (max-width:640px){
+    h1{font-size:38px}
+    h2{font-size:24px}
+    .cta.ghost{margin:10px 0 0}
+    .nav-links{display:none}
+    section{padding:40px 0}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap nav">
+    <div class="brand">
+      <div class="logo"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M4 4l16 8-16 8z" fill="currentColor"/></svg></div>
+      Stream Studio
+    </div>
+    <div class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#how">How it works</a>
+      <a href="#faq">FAQ</a>
+      <a href="https://github.com/gokuleshdasa/stream-studio" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <section class="hero">
+    <span class="eyebrow">FREE · MIT · SELF-UPDATING</span>
+    <h1>Download, clip &amp; convert media<br>from <span>any site</span></h1>
+    <p class="lede">Paste a link from YouTube, SoundCloud, Vimeo, Dailymotion, Bandcamp, Twitch and 1,800+ other sites. Stream Studio fetches the media, lets you mark named clips on a timeline with live preview, and exports the exact audio/video, format and bitrate you want — all on your Windows PC.</p>
+    <a class="cta" href="https://github.com/gokuleshdasa/stream-studio/releases/latest/download/StreamStudio-Setup.exe">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+      Download for Windows
+    </a>
+    <a class="cta ghost" href="https://github.com/gokuleshdasa/stream-studio" target="_blank" rel="noopener">Source on GitHub</a>
+    <div class="meta-row">
+      <span><b>Windows 10 / 11</b> · x64</span>
+      <span>·</span>
+      <span>Unsigned build — SmartScreen: <b>More info → Run anyway</b></span>
+    </div>
+
+    <div class="shot"><div class="shot-inner">
+      <div>
+        <b>Timeline editor with live preview</b>
+        Drag to mark clips · trim edges · export exact audio/video<br>
+        <small style="opacity:.6;margin-top:10px;display:inline-block">(screenshot placeholder — replace <code>docs/screenshot.png</code> and swap this block for an &lt;img&gt;)</small>
+      </div>
+    </div></div>
+  </section>
+
+  <section id="features">
+    <h2>What it does</h2>
+    <div class="grid">
+      <div class="card">
+        <div class="ic">🌐</div>
+        <h3>Any site</h3>
+        <p>Anything <a href="https://github.com/yt-dlp/yt-dlp" target="_blank" rel="noopener">yt-dlp</a> supports — 1,800+ sites and counting. YouTube uses its native player; every other site gets a proxied HTML5 preview.</p>
+      </div>
+      <div class="card tealic">
+        <div class="ic">✂️</div>
+        <h3>Timeline editor</h3>
+        <p>Drag to mark named regions, trim the edges, scrub to preview just that region. Export each clip as its own file.</p>
+      </div>
+      <div class="card pinkic">
+        <div class="ic">🎧</div>
+        <h3>Audio &amp; video</h3>
+        <p>Audio: MP3, WAV, AAC, M4A, FLAC, Opus, OGG. Video: MP4, MKV, WebM. Full bitrate and quality control.</p>
+      </div>
+      <div class="card">
+        <div class="ic">📥</div>
+        <h3>Chrome extension</h3>
+        <p>Send the page you're on straight to the app. Corner pill for channels/playlists, hover button over videos.</p>
+      </div>
+      <div class="card tealic">
+        <div class="ic">🔄</div>
+        <h3>Self-updating</h3>
+        <p>Every 6 hours the app silently pulls the latest yt-dlp and the newest Stream Studio release. YouTube's next site change fixes itself in the background.</p>
+      </div>
+      <div class="card pinkic">
+        <div class="ic">🖥️</div>
+        <h3>Runs locally</h3>
+        <p>No cloud, no account, no telemetry. Ships FFmpeg, yt-dlp and a Deno runtime bundled — nothing to install on your side.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="how">
+    <h2>Zero-touch, forever</h2>
+    <div class="steps">
+      <div class="step">
+        <div class="num">1</div>
+        <h3>Install</h3>
+        <p>Download <code>StreamStudio-Setup.exe</code>. Run it. Next → Next → Finish. Auto-starts at login into the system tray.</p>
+      </div>
+      <div class="step">
+        <div class="num">2</div>
+        <h3>Paste a link</h3>
+        <p>Open <code>http://127.0.0.1:5006</code> (or click the tray icon). Paste any URL. Mark clips. Pick format. Convert.</p>
+      </div>
+      <div class="step">
+        <div class="num">3</div>
+        <h3>Never touch again</h3>
+        <p>App and yt-dlp self-heal every 6 hours from GitHub and PyPI. No dialogs, no update prompts. Just works.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="faq">
+    <h2>FAQ</h2>
+    <details>
+      <summary>Is this free?</summary>
+      <p>Yes, and MIT-licensed. Source is on <a href="https://github.com/gokuleshdasa/stream-studio" target="_blank" rel="noopener">GitHub</a>.</p>
+    </details>
+    <details>
+      <summary>Why does SmartScreen warn me?</summary>
+      <p>The installer isn't code-signed (signing costs money and I haven't done it yet). Click <b>More info → Run anyway</b>. Every file is bit-for-bit reproducible from the repo — you can build it yourself from <code>BUILD.md</code>.</p>
+    </details>
+    <details>
+      <summary>Does it collect any data?</summary>
+      <p>No. The app runs entirely on your machine. The only outbound calls are to PyPI (yt-dlp version check) and GitHub Releases (app version check), both public JSON endpoints. Nothing about you or what you download leaves.</p>
+    </details>
+    <details>
+      <summary>Mac / Linux?</summary>
+      <p>Not yet. The core is Python + Flask, so it's portable in principle, but the installer, tray integration, FFmpeg/Deno bundling, and auto-update path are Windows-only right now.</p>
+    </details>
+    <details>
+      <summary>Is downloading legal?</summary>
+      <p>For content you own or have the right to use — your own uploads, Creative Commons, permissioned content — yes. Downloading copyrighted material may violate a site's Terms of Service and local law. You are responsible for how you use it.</p>
+    </details>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    Built on <a href="https://github.com/yt-dlp/yt-dlp" target="_blank" rel="noopener">yt-dlp</a>,
+    <a href="https://ffmpeg.org/" target="_blank" rel="noopener">FFmpeg</a>,
+    <a href="https://flask.palletsprojects.com/" target="_blank" rel="noopener">Flask</a>,
+    <a href="https://deno.com/" target="_blank" rel="noopener">Deno</a>.
+    <br>
+    MIT © 2026 Gokul Esh Dasa · <a href="https://github.com/gokuleshdasa/stream-studio" target="_blank" rel="noopener">Source</a> · <a href="https://github.com/gokuleshdasa/stream-studio/releases" target="_blank" rel="noopener">Releases</a>
+  </div>
+</footer>
+
+</body>
+</html>
