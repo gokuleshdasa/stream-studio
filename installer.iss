@@ -2,7 +2,7 @@
 ; Produces a classic "Next -> Next -> Finish" Windows installer.
 
 #define AppName "Stream Studio"
-#define AppVersion "1.6.3"
+#define AppVersion "1.6.4"
 #define AppPublisher "Stream Studio"
 #define AppExe "StreamStudio.exe"
 
@@ -32,7 +32,11 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription
 Name: "startup"; Description: "Start Stream Studio automatically when I sign in (recommended, so the Chrome button always works)"; GroupDescription: "Background service:"
 
 [Files]
-Source: "dist\{#AppExe}"; DestDir: "{app}"; Flags: ignoreversion
+; PyInstaller --onedir output: the exe plus a _internal folder with every
+; runtime file (Python, DLLs, static/, templates/, ffmpeg.exe, deno.exe).
+; Ship the whole tree — no --onefile extraction to %TEMP% means antivirus
+; and Windows cleanup cannot make the static assets vanish mid-run.
+Source: "dist\StreamStudio\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "chrome-extension\*"; DestDir: "{app}\chrome-extension"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "dist-readme.txt"; DestDir: "{app}"; DestName: "READ ME FIRST.txt"; Flags: ignoreversion isreadme
 

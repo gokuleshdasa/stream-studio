@@ -1,5 +1,25 @@
 # Stream Studio — Changelog
 
+## 1.6.4 — 2026-09-20
+
+Reliability: no more blank / unstyled pages, no more zombie duplicate
+processes.
+
+- **Switched PyInstaller build from `--onefile` to `--onedir`.** The old
+  build extracted a ~350 MB payload to `%TEMP%\_MEIxxxxx\` on every launch;
+  when Windows temp cleanup or antivirus touched a file mid-run, `static/`
+  or `templates/` would vanish and Flask would silently 404 all CSS and JS
+  — the page rendered as raw unstyled HTML. All runtime files now sit
+  permanently next to the exe in `C:\Program Files\Stream Studio\_internal\`
+  (what Chrome, VSCode, Slack, Postman all do). Nothing to lose mid-run.
+- **Proper single-instance guard.** Replaced the port-open probe with a
+  Windows named mutex (`StreamStudio-SingleInstance-Mutex-v1`). The port
+  probe alone was racy — two launches within 0.4 s (Startup + tray click,
+  or Startup + auto-updater re-exec) both saw an open port and both
+  proceeded. Kernel mutex settles it deterministically.
+- Installer bundles the whole `dist\StreamStudio\` folder now, not just
+  the single exe.
+
 ## 1.6.3 — 2026-09-14
 
 Single vs Batch — pruning the noise.

@@ -18,7 +18,7 @@ powershell -NoProfile -Command "$f = Get-ChildItem \"$env:LOCALAPPDATA\Microsoft
 echo.
 
 echo [3/4] Rebuilding the app (.exe)...
-python -m PyInstaller --noconfirm --onefile --windowed --name StreamStudio --icon build_assets\app.ico --add-data "templates;templates" --add-data "static;static" --add-binary "build_assets\ffmpeg.exe;." --add-binary "build_assets\deno.exe;." --collect-all yt_dlp --collect-all yt_dlp_ejs --collect-all curl_cffi --collect-all brotli --collect-all pystray --collect-all PIL --hidden-import _overlapped --hidden-import _asyncio --hidden-import asyncio app.py
+python -m PyInstaller --noconfirm --onedir --windowed --name StreamStudio --icon build_assets\app.ico --add-data "templates;templates" --add-data "static;static" --add-binary "build_assets\ffmpeg.exe;." --add-binary "build_assets\deno.exe;." --collect-all yt_dlp --collect-all yt_dlp_ejs --collect-all curl_cffi --collect-all brotli --collect-all pystray --collect-all PIL --hidden-import _overlapped --hidden-import _asyncio --hidden-import asyncio app.py
 if errorlevel 1 ( echo Build failed. & pause & exit /b 1 )
 echo.
 

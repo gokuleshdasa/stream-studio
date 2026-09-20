@@ -21,7 +21,7 @@ from pathlib import Path
 # is loaded INSTEAD of the copy frozen inside the .exe, so the app keeps working
 # when YouTube changes without us shipping a whole new build.
 EXTENSION_VERSION = "2.0.1"  # version of the chrome-extension shipped with this app
-APP_VERSION = "1.6.3"        # keep in sync with installer.iss AppVersion
+APP_VERSION = "1.6.4"        # keep in sync with installer.iss AppVersion
 GITHUB_REPO = "gokuleshdasa/stream-studio"
 
 def _override_dir():
@@ -1225,6 +1225,33 @@ def _port_open(port):
         return s.connect_ex(("127.0.0.1", port)) == 0
 
 
+def _acquire_single_instance():
+    """Windows named mutex — the port check alone is racy when two launches
+    fire within 0.4 s of each other (Startup + tray click, or Startup +
+    auto-updater re-exec). Returns True if this process is THE instance;
+    False if another already holds the mutex.
+    The mutex handle is intentionally leaked — the OS releases it on exit."""
+    if os.name != "nt":
+        return True
+    try:
+        import ctypes
+        from ctypes import wintypes
+        ERROR_ALREADY_EXISTS = 183
+        kernel32 = ctypes.windll.kernel32
+        kernel32.CreateMutexW.argtypes = [wintypes.LPCVOID, wintypes.BOOL, wintypes.LPCWSTR]
+        kernel32.CreateMutexW.restype = wintypes.HANDLE
+        # Global\ prefix works across user sessions but requires the
+        # SeCreateGlobalPrivilege token — a UAC-elevated installer's post-run
+        # step has it, a normal user process doesn't. Local\ (default) is
+        # fine: one instance per Windows user session, which is what we want.
+        handle = kernel32.CreateMutexW(None, False, "StreamStudio-SingleInstance-Mutex-v1")
+        if not handle:
+            return True  # can't create mutex — fall through, port check will catch
+        return kernel32.GetLastError() != ERROR_ALREADY_EXISTS
+    except Exception:
+        return True  # any error — don't block startup on this best-effort check
+
+
 # ---- silent yt-dlp auto-updater --------------------------------------------
 # Runs regardless of whether the tray backend loaded; the tray hooks into
 # _UPDATE_STATE so the menu item reflects live status without duplicating work.
@@ -1353,7 +1380,12 @@ if __name__ == "__main__":
     port = 5006
     autostart = "--autostart" in sys.argv  # launched at login -> stay quiet
 
-    # Single instance: if the server is already running, just surface it.
+    # Single instance: kernel mutex first (rock solid, races the port bind
+    # cleanly), port check as a fallback in case the mutex API failed.
+    if not _acquire_single_instance():
+        if not autostart:
+            webbrowser.open(f"http://127.0.0.1:{port}")
+        sys.exit(0)
     if _port_open(port):
         if not autostart:
             webbrowser.open(f"http://127.0.0.1:{port}")
