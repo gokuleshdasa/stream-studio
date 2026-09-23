@@ -1,5 +1,25 @@
 # Stream Studio — Changelog
 
+## 1.6.5 — 2026-09-24
+
+Chrome extension: drag the button anywhere, close it per video.
+
+- **Draggable pill and hover button.** Grab either button anywhere on its
+  body and drag — the position saves to `chrome.storage.local` and
+  persists across reloads. Kicks the ✕ / Download click through cleanly
+  so a drag doesn't accidentally trigger the button.
+- **Per-video hide.** ✕ on the pill hides it for **this page only**
+  (persisted). ✕ on the hover button hides it for **this video only**
+  (persisted). Different YouTube video → button comes back. Clears itself
+  after 500 remembered videos so `chrome.storage` doesn't grow forever.
+- **Hover button auto-position surrenders to your drag.** As soon as
+  you've moved it once, Stream Studio stops fighting your placement —
+  the button stays where you put it across scrolls, video switches, and
+  page loads. Clear the `hoverPos` key in the extension's storage to
+  restore auto-positioning.
+- Extension version 2.0.1 → 2.0.2; app EXTENSION_VERSION mirror updated.
+- installer AppVersion 1.6.4 → 1.6.5.
+
 ## 1.6.4 — 2026-09-20
 
 Reliability: no more blank / unstyled pages, no more zombie duplicate

@@ -67,16 +67,25 @@
 
 /* IDM-style hover button over a media element */
 #ss-hover{
-  position:absolute; z-index:2147483600; display:none; align-items:center; gap:7px;
+  position:absolute; z-index:2147483600; display:none; align-items:center; gap:6px;
   font-family:'Roboto','Segoe UI',system-ui,sans-serif; font-size:13px; font-weight:700;
-  color:#fff; cursor:pointer; padding:9px 14px; border-radius:10px;
+  color:#fff; padding:6px 8px 6px 14px; border-radius:10px;
   background:linear-gradient(135deg,#7c5cff,#ff5ca8);
   box-shadow:0 8px 22px rgba(0,0,0,.5); user-select:none;
-  transition:transform .12s, filter .2s;
+  transition:filter .2s;
 }
 #ss-hover.show{ display:inline-flex; }
-#ss-hover:hover{ transform:scale(1.04); filter:brightness(1.08); }
+#ss-hover .ss-hover-body{ display:inline-flex; align-items:center; gap:7px; cursor:pointer; padding:3px 4px 3px 0; }
+#ss-hover .ss-hover-body:hover{ filter:brightness(1.12); }
+#ss-hover .ss-hover-x{
+  width:22px; height:22px; border-radius:50%; cursor:pointer; font-size:11px; line-height:1;
+  border:none; color:#fff; background:rgba(0,0,0,.35); flex:none; transition:.15s;
+}
+#ss-hover .ss-hover-x:hover{ background:rgba(0,0,0,.65); }
 #ss-hover .ss-ic{ font-size:14px; }
+/* draggable elements — visual affordance */
+.ss-drag-handle{ cursor:grab; }
+.ss-drag-handle:active{ cursor:grabbing; }
 
 /* toast */
 .ss-toast{

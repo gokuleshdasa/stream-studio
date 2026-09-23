@@ -17,13 +17,14 @@ winget upgrade --id Gyan.FFmpeg --accept-package-agreements --accept-source-agre
 powershell -NoProfile -Command "$f = Get-ChildItem \"$env:LOCALAPPDATA\Microsoft\WinGet\Packages\" -Recurse -Filter ffmpeg.exe -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1; if ($f) { Copy-Item $f.FullName 'build_assets\ffmpeg.exe' -Force; Write-Host ('   bundled ffmpeg: ' + $f.FullName) } else { Write-Host '   (kept existing bundled ffmpeg)' }"
 echo.
 
-echo [3/4] Rebuilding the app (.exe)...
-python -m PyInstaller --noconfirm --onedir --windowed --name StreamStudio --icon build_assets\app.ico --add-data "templates;templates" --add-data "static;static" --add-binary "build_assets\ffmpeg.exe;." --add-binary "build_assets\deno.exe;." --collect-all yt_dlp --collect-all yt_dlp_ejs --collect-all curl_cffi --collect-all brotli --collect-all pystray --collect-all PIL --hidden-import _overlapped --hidden-import _asyncio --hidden-import asyncio app.py
+echo [3/4] Rebuilding the app (.exe) - build outside OneDrive so file locks don't kill the build...
+set "SS_BUILD=%LOCALAPPDATA%\ss-build"
+python -m PyInstaller --noconfirm --onedir --windowed --name StreamStudio --distpath "%SS_BUILD%\dist" --workpath "%SS_BUILD%\build" --icon build_assets\app.ico --add-data "templates;templates" --add-data "static;static" --add-binary "build_assets\ffmpeg.exe;." --add-binary "build_assets\deno.exe;." --collect-all yt_dlp --collect-all yt_dlp_ejs --collect-all curl_cffi --collect-all brotli --collect-all pystray --collect-all PIL --hidden-import _overlapped --hidden-import _asyncio --hidden-import asyncio app.py
 if errorlevel 1 ( echo Build failed. & pause & exit /b 1 )
 echo.
 
 echo [4/4] Recompiling the installer...
-"%LocalAppData%\Programs\Inno Setup 6\ISCC.exe" installer.iss
+"%LocalAppData%\Programs\Inno Setup 6\ISCC.exe" "/DDistDir=%SS_BUILD%\dist" installer.iss
 if errorlevel 1 ( echo Installer compile failed. & pause & exit /b 1 )
 echo.
 

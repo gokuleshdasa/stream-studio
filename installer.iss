@@ -2,9 +2,15 @@
 ; Produces a classic "Next -> Next -> Finish" Windows installer.
 
 #define AppName "Stream Studio"
-#define AppVersion "1.6.4"
+#define AppVersion "1.6.5"
 #define AppPublisher "Stream Studio"
 #define AppExe "StreamStudio.exe"
+; PyInstaller output dir. Overridable from the command line
+;   ISCC /DDistDir="C:\some\scratch\dist" installer.iss
+; so builds can run outside OneDrive (which locks .dist-info\licenses).
+#ifndef DistDir
+  #define DistDir "dist"
+#endif
 
 [Setup]
 AppId={{3C9E5F18-7A2D-4B6E-9F41-2E8A5D0C7B34}
@@ -36,7 +42,7 @@ Name: "startup"; Description: "Start Stream Studio automatically when I sign in 
 ; runtime file (Python, DLLs, static/, templates/, ffmpeg.exe, deno.exe).
 ; Ship the whole tree — no --onefile extraction to %TEMP% means antivirus
 ; and Windows cleanup cannot make the static assets vanish mid-run.
-Source: "dist\StreamStudio\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#DistDir}\StreamStudio\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "chrome-extension\*"; DestDir: "{app}\chrome-extension"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "dist-readme.txt"; DestDir: "{app}"; DestName: "READ ME FIRST.txt"; Flags: ignoreversion isreadme
 

@@ -76,6 +76,101 @@
     if (items.length) send("addDomMedia", { items });
   }
 
+  // ---- draggable + dismissible helpers -----------------------------------
+  // Position and per-page "hide me" state persist across reloads via
+  // chrome.storage.local — same store the popup uses.
+  function loadKV(cb) {
+    try { chrome.storage.local.get(["pillPos", "hoverPos", "hiddenPill", "hiddenHover"], cb); }
+    catch { cb({}); }
+  }
+  function saveKV(patch) { try { chrome.storage.local.set(patch); } catch {} }
+
+  // A cheap "which video am I on" key so Close is per-video, not per-domain.
+  // For YouTube watch pages we use the ?v= id; for everything else, full URL.
+  function currentVideoKey() {
+    try {
+      const u = new URL(location.href);
+      if (/(^|\.)youtube\.com$/i.test(u.hostname) && u.pathname === "/watch") {
+        return "yt:" + u.searchParams.get("v");
+      }
+      return u.origin + u.pathname + u.search;
+    } catch { return location.href; }
+  }
+
+  function makeDraggable(el, handleEl, storageKey) {
+    // Grab position from storage on install.
+    loadKV(d => {
+      const p = d && d[storageKey];
+      if (p && Number.isFinite(p.left) && Number.isFinite(p.top)) applyPos(el, p);
+    });
+
+    let dragging = false, moved = false, startX = 0, startY = 0, baseL = 0, baseT = 0;
+    handleEl.style.cursor = "grab";
+
+    handleEl.addEventListener("pointerdown", ev => {
+      // Ignore the actual click on child buttons — those still fire normally.
+      if (ev.target !== handleEl && ev.target.closest("button") && ev.target !== handleEl) {
+        // Only start drag on the pill background / hover-btn body, not on ✕ / Download button
+        if (!ev.target.classList.contains("ss-drag-handle")) return;
+      }
+      dragging = true; moved = false;
+      startX = ev.clientX; startY = ev.clientY;
+      const r = el.getBoundingClientRect();
+      baseL = r.left; baseT = r.top;
+      handleEl.style.cursor = "grabbing";
+      handleEl.setPointerCapture(ev.pointerId);
+    });
+    handleEl.addEventListener("pointermove", ev => {
+      if (!dragging) return;
+      const dx = ev.clientX - startX, dy = ev.clientY - startY;
+      if (!moved && Math.abs(dx) + Math.abs(dy) < 3) return;
+      moved = true;
+      const left = clamp(baseL + dx, 4, window.innerWidth - el.offsetWidth - 4);
+      const top  = clamp(baseT + dy, 4, window.innerHeight - el.offsetHeight - 4);
+      applyPos(el, { left, top });
+    });
+    handleEl.addEventListener("pointerup", ev => {
+      if (!dragging) return;
+      dragging = false;
+      handleEl.style.cursor = "grab";
+      try { handleEl.releasePointerCapture(ev.pointerId); } catch {}
+      if (moved) {
+        const r = el.getBoundingClientRect();
+        saveKV({ [storageKey]: { left: r.left, top: r.top } });
+      }
+    });
+    // Swallow the click that follows a drag so we don't accidentally trigger Download.
+    handleEl.addEventListener("click", ev => { if (moved) { ev.stopPropagation(); ev.preventDefault(); moved = false; } }, true);
+  }
+  function clamp(n, lo, hi) { return Math.max(lo, Math.min(hi, n)); }
+  function applyPos(el, p) {
+    el.style.left = p.left + "px";
+    el.style.top  = p.top + "px";
+    el.style.right = "auto";
+    el.style.bottom = "auto";
+  }
+  function markHidden(kind, key) {
+    loadKV(d => {
+      const set = d[kind === "pill" ? "hiddenPill" : "hiddenHover"] || {};
+      set[key] = Date.now();
+      // Cap to last 500 videos so the object doesn't grow forever.
+      const entries = Object.entries(set);
+      if (entries.length > 500) {
+        entries.sort((a, b) => a[1] - b[1]);
+        const trimmed = Object.fromEntries(entries.slice(-500));
+        saveKV(kind === "pill" ? { hiddenPill: trimmed } : { hiddenHover: trimmed });
+      } else {
+        saveKV(kind === "pill" ? { hiddenPill: set } : { hiddenHover: set });
+      }
+    });
+  }
+  function isHidden(kind, key, cb) {
+    loadKV(d => {
+      const set = d[kind === "pill" ? "hiddenPill" : "hiddenHover"] || {};
+      cb(!!set[key]);
+    });
+  }
+
   // ---- supported-site pill ----
   // We only surface the corner pill on LISTING pages (channel / playlist /
   // search / user page) — a single-video page already has the on-video hover
@@ -114,44 +209,81 @@
     const ex = document.getElementById("ss-pill");
     // Skip pill on single-media pages — hover button already covers them.
     if (!isBatchUrl(href)) { if (ex) ex.remove(); return; }
-    if (await supported(href)) { if (!ex) makePill(); } else if (ex) ex.remove();
+    // Honour a persistent "hide for this page" the user set via ✕.
+    isHidden("pill", currentVideoKey(), hidden => {
+      if (hidden) { if (ex) ex.remove(); return; }
+      if (ex) return; // already present
+      supported(href).then(ok => { if (ok) makePill(); });
+    });
   }
   function makePill() {
     const p = document.createElement("div"); p.id = "ss-pill";
-    p.innerHTML = `<button class="ss-pill-btn"><span class="ss-ic">⬇</span><span>Fetch list</span></button><button class="ss-pill-x" title="Hide">✕</button>`;
+    // The pill body ITSELF is a drag handle (marked ss-drag-handle). The
+    // Download button and ✕ are children — they still click normally, only a
+    // grab-and-move on empty pill space starts a drag.
+    p.classList.add("ss-drag-handle");
+    p.innerHTML = `<button class="ss-pill-btn"><span class="ss-ic">⬇</span><span>Fetch list</span></button><button class="ss-pill-x" title="Hide for this page">✕</button>`;
     p.querySelector(".ss-pill-btn").addEventListener("click", () => send("openApp", { url: location.href, batch: true }));
-    p.querySelector(".ss-pill-x").addEventListener("click", () => p.remove());
+    p.querySelector(".ss-pill-x").addEventListener("click", ev => {
+      ev.stopPropagation();
+      markHidden("pill", currentVideoKey());
+      p.remove();
+    });
     document.body.appendChild(p); requestAnimationFrame(() => p.classList.add("in"));
+    makeDraggable(p, p, "pillPos");
   }
 
   // ---- hover button ----
+  // If the user has dragged it, we STOP auto-positioning relative to the
+  // video and honour their placement (via chrome.storage.local -> hoverPos).
+  // If the user has ✕'d it on this video, we don't show it at all.
   let hoverBtn = null, hoverEl = null, hideTimer = null;
+  let userMovedHover = false;
+  loadKV(d => { userMovedHover = !!(d && d.hoverPos); });
   function ensureHoverBtn() {
     if (hoverBtn) return hoverBtn;
-    hoverBtn = document.createElement("div"); hoverBtn.id = "ss-hover"; hoverBtn.innerHTML = `<span class="ss-ic">⬇</span> Download`;
-    hoverBtn.addEventListener("click", e => {
+    hoverBtn = document.createElement("div"); hoverBtn.id = "ss-hover";
+    hoverBtn.classList.add("ss-drag-handle");
+    hoverBtn.innerHTML =
+      `<span class="ss-hover-body"><span class="ss-ic">⬇</span> Download</span>` +
+      `<button class="ss-hover-x" title="Hide for this video">✕</button>`;
+    hoverBtn.querySelector(".ss-hover-body").addEventListener("click", e => {
       e.stopPropagation(); e.preventDefault(); if (!hoverEl) return;
       const src = hoverEl.currentSrc || hoverEl.src || "";
       const kind = hoverEl.tagName === "AUDIO" ? "audio" : "video";
       if (/^https?:/i.test(src)) download(src, kind); else { send("openApp", { url: location.href }); toast("Opening Stream Studio…"); }
     });
+    hoverBtn.querySelector(".ss-hover-x").addEventListener("click", ev => {
+      ev.stopPropagation(); ev.preventDefault();
+      markHidden("hover", currentVideoKey());
+      hideHover();
+    });
     hoverBtn.addEventListener("mouseenter", () => clearTimeout(hideTimer));
     hoverBtn.addEventListener("mouseleave", scheduleHide);
     document.body.appendChild(hoverBtn);
+    makeDraggable(hoverBtn, hoverBtn, "hoverPos");
+    // Watch for a drag save so we flip auto-positioning off from now on.
+    try {
+      chrome.storage.onChanged.addListener(ch => { if (ch.hoverPos) userMovedHover = true; });
+    } catch {}
     return hoverBtn;
   }
   function positionHover(el) {
     const r = el.getBoundingClientRect();
     if (r.width < 120 || r.height < 60) { hideHover(); return; }
-    const b = ensureHoverBtn(); b.classList.add("show");
-    b.style.top = (window.scrollY + r.top + 12) + "px";
-    b.style.left = (window.scrollX + r.right - 12 - b.offsetWidth) + "px";
+    isHidden("hover", currentVideoKey(), hidden => {
+      if (hidden) { hideHover(); return; }
+      const b = ensureHoverBtn(); b.classList.add("show");
+      if (userMovedHover) return; // don't fight the user's chosen spot
+      b.style.top = (window.scrollY + r.top + 12) + "px";
+      b.style.left = (window.scrollX + r.right - 12 - b.offsetWidth) + "px";
+    });
   }
   function scheduleHide() { hideTimer = setTimeout(hideHover, 400); }
   function hideHover() { if (hoverBtn) hoverBtn.classList.remove("show"); hoverEl = null; }
   function onOver(e) { const el = e.target.closest && e.target.closest("video, audio"); if (el) { hoverEl = el; clearTimeout(hideTimer); positionHover(el); } }
   function onOut(e) { if (e.target.closest && e.target.closest("video, audio")) scheduleHide(); }
-  function onScroll() { if (hoverEl) positionHover(hoverEl); }
+  function onScroll() { if (hoverEl && !userMovedHover) positionHover(hoverEl); }
   function enableHover() { document.addEventListener("mouseover", onOver, true); document.addEventListener("mouseout", onOut, true); window.addEventListener("scroll", onScroll, true); }
   function disableHover() { document.removeEventListener("mouseover", onOver, true); document.removeEventListener("mouseout", onOut, true); window.removeEventListener("scroll", onScroll, true); hideHover(); }
 
