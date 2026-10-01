@@ -8,6 +8,7 @@ import sys
 import json
 import time
 import uuid
+import shlex
 import shutil
 import tempfile
 import zipfile
@@ -20,14 +21,34 @@ from pathlib import Path
 # A newer yt-dlp can be unpacked into this user-writable folder; if present it
 # is loaded INSTEAD of the copy frozen inside the .exe, so the app keeps working
 # when YouTube changes without us shipping a whole new build.
-EXTENSION_VERSION = "2.0.3"  # version of the chrome-extension shipped with this app
-APP_VERSION = "1.6.6"        # keep in sync with installer.iss AppVersion
+EXTENSION_VERSION = "2.1.0"  # version of the chrome-extension shipped with this app
+APP_VERSION = "1.7.0"        # keep in sync with installer.iss AppVersion
 GITHUB_REPO = "gokuleshdasa/stream-studio"
 
-def _override_dir():
-    base = os.environ.get("LOCALAPPDATA") or str(Path.home())
-    return Path(base) / "Stream Studio" / "pkgs"
-OVERRIDE_DIR = _override_dir()
+IS_WIN = sys.platform.startswith("win")
+IS_MAC = sys.platform == "darwin"
+EXE_SUFFIX = ".exe" if IS_WIN else ""
+
+
+def _data_dir():
+    """Per-user, writable, survives reinstalls. Holds the yt-dlp override
+    (pkgs/), settings.json and the auto-synced copy of the Chrome extension.
+      Windows: %LOCALAPPDATA%/Stream Studio     (unchanged since v1.6.0)
+      macOS:   ~/Library/Application Support/Stream Studio
+      Linux:   $XDG_DATA_HOME or ~/.local/share/stream-studio
+    """
+    if IS_WIN:
+        return Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "Stream Studio"
+    if IS_MAC:
+        return Path.home() / "Library" / "Application Support" / "Stream Studio"
+    return Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share") / "stream-studio"
+
+
+DATA_DIR = _data_dir()
+OVERRIDE_DIR = DATA_DIR / "pkgs"
+# Pure-Python packages that can be hot-swapped from OVERRIDE_DIR without
+# shipping a new build. (Binary deps like curl_cffi/brotli ride app releases.)
+OVERRIDE_PKGS = ("yt_dlp", "yt_dlp_ejs")
 
 import importlib.abc
 import importlib.machinery
@@ -39,12 +60,13 @@ class _OverrideFinder(importlib.abc.MetaPathFinder):
         self._path = [str(path)]
 
     def find_spec(self, name, target=None, *args, **kwargs):
-        if name == "yt_dlp" or name.startswith("yt_dlp."):
+        top = name.split(".", 1)[0]
+        if top in OVERRIDE_PKGS and (OVERRIDE_DIR / top).exists():
             return importlib.machinery.PathFinder.find_spec(name, self._path)
         return None
 
 
-_override_active = (OVERRIDE_DIR / "yt_dlp" / "__init__.py").exists()
+_override_active = any((OVERRIDE_DIR / _p / "__init__.py").exists() for _p in OVERRIDE_PKGS)
 if _override_active:
     sys.meta_path.insert(0, _OverrideFinder(OVERRIDE_DIR))
 
@@ -57,9 +79,10 @@ try:
 except Exception:
     if _override_active:
         sys.meta_path[:] = [m for m in sys.meta_path if not isinstance(m, _OverrideFinder)]
-        for _m in [k for k in list(sys.modules) if k == "yt_dlp" or k.startswith("yt_dlp.")]:
+        for _m in [k for k in list(sys.modules) if k.split(".", 1)[0] in OVERRIDE_PKGS]:
             del sys.modules[_m]
-        shutil.rmtree(OVERRIDE_DIR / "yt_dlp", ignore_errors=True)
+        for _pkg in OVERRIDE_PKGS:
+            shutil.rmtree(OVERRIDE_DIR / _pkg, ignore_errors=True)
         _override_active = False
         import yt_dlp
     else:
@@ -67,7 +90,7 @@ except Exception:
 
 # ---- path resolution (works both as `python app.py` and as a frozen exe) ----
 FROZEN = getattr(sys, "frozen", False)
-# RES_DIR: where bundled read-only assets live (templates, static, ffmpeg.exe)
+# RES_DIR: where bundled read-only assets live (templates, static, ffmpeg, deno)
 RES_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
 EXE_DIR = Path(sys.executable).parent if FROZEN else Path(__file__).parent
 
@@ -84,19 +107,20 @@ OUT.mkdir(exist_ok=True, parents=True)
 
 # ffmpeg: prefer a bundled copy (in the bundle / next to the exe), else PATH
 def _resolve_ffmpeg():
-    for cand in (RES_DIR / "ffmpeg.exe", EXE_DIR / "ffmpeg.exe"):
+    for cand in (RES_DIR / f"ffmpeg{EXE_SUFFIX}", EXE_DIR / f"ffmpeg{EXE_SUFFIX}"):
         if cand.exists():
             return str(cand)
-    return "ffmpeg"
+    return "ffmpeg"   # system PATH (Homebrew / apt / winget …)
 FFMPEG = _resolve_ffmpeg()
 
 # Deno JS runtime: newer yt-dlp uses it for some YouTube player checks. If a
 # bundled (or system) deno is found, put its folder on PATH so yt-dlp finds it.
 def _resolve_deno():
-    for cand in (RES_DIR / "deno.exe", EXE_DIR / "deno.exe"):
+    for cand in (RES_DIR / f"deno{EXE_SUFFIX}", EXE_DIR / f"deno{EXE_SUFFIX}"):
         if cand.exists():
             return cand
-    return None
+    on_path = shutil.which("deno")
+    return Path(on_path) if on_path else None
 DENO = _resolve_deno()
 if DENO:
     os.environ["PATH"] = str(DENO.parent) + os.pathsep + os.environ.get("PATH", "")
@@ -125,7 +149,7 @@ IMPERSONATE = _impersonate_opts()
 # ---- user settings (cookies-from-browser, etc.) -----------------------------
 # Persisted in the same user-writable folder as the yt-dlp override so it
 # survives app updates / reinstalls.
-SETTINGS_FILE = OVERRIDE_DIR.parent / "settings.json"
+SETTINGS_FILE = DATA_DIR / "settings.json"
 _SETTINGS_DEFAULTS = {
     # One of: "", "chrome", "edge", "firefox", "brave", "chromium", "opera",
     # "vivaldi", "safari". "" disables cookie loading.
@@ -204,17 +228,22 @@ def current_ytdlp():
         return "0"
 
 
-def latest_ytdlp():
-    """Return (version, wheel_url) of the newest yt-dlp on PyPI."""
-    with urllib.request.urlopen("https://pypi.org/pypi/yt-dlp/json", timeout=15) as r:
+def latest_pypi(project):
+    """Return (version, wheel_url) of the newest release of `project` on PyPI."""
+    with urllib.request.urlopen(f"https://pypi.org/pypi/{project}/json", timeout=15) as r:
         data = json.load(r)
     ver = data["info"]["version"]
     url = None
     for f in data["releases"].get(ver, []):
-        if f["filename"].endswith(".whl"):
+        # prefer the universal wheel (yt-dlp / yt-dlp-ejs are pure Python)
+        if f["filename"].endswith(".whl") and "none-any" in f["filename"]:
             url = f["url"]
             break
     return ver, url
+
+
+def latest_ytdlp():
+    return latest_pypi("yt-dlp")
 
 
 def ytdlp_update_available():
@@ -225,8 +254,8 @@ def ytdlp_update_available():
         return False, None
 
 
-def install_ytdlp(url):
-    """Download the yt-dlp wheel and unpack its package into OVERRIDE_DIR."""
+def install_pypi_wheel(url, package):
+    """Download a pure-Python wheel and unpack `package` into OVERRIDE_DIR."""
     OVERRIDE_DIR.mkdir(parents=True, exist_ok=True)
     req = urllib.request.Request(url, headers={"User-Agent": "StreamStudio"})
     with urllib.request.urlopen(req, timeout=120) as r:
@@ -234,15 +263,27 @@ def install_ytdlp(url):
     tmp = Path(tempfile.mkdtemp())
     with zipfile.ZipFile(__import__("io").BytesIO(blob)) as z:
         z.extractall(tmp)
-    src = tmp / "yt_dlp"
+    src = tmp / package
     if not src.exists():
         shutil.rmtree(tmp, ignore_errors=True)
-        raise RuntimeError("downloaded wheel did not contain yt_dlp")
-    target = OVERRIDE_DIR / "yt_dlp"
+        raise RuntimeError(f"downloaded wheel did not contain {package}")
+    target = OVERRIDE_DIR / package
     if target.exists():
         shutil.rmtree(target, ignore_errors=True)
     shutil.move(str(src), str(target))
     shutil.rmtree(tmp, ignore_errors=True)
+
+
+def install_ytdlp(url):
+    """Install the yt-dlp wheel, then best-effort refresh its JS-challenge
+    solver (yt-dlp-ejs). The companion is optional: failure never blocks."""
+    install_pypi_wheel(url, "yt_dlp")
+    try:
+        _, ejs_url = latest_pypi("yt-dlp-ejs")
+        if ejs_url:
+            install_pypi_wheel(ejs_url, "yt_dlp_ejs")
+    except Exception:
+        pass
 
 app = Flask(__name__,
             template_folder=str(RES_DIR / "templates"),
@@ -447,7 +488,7 @@ def api_update_app():
         try:
             _, url = latest_app_release()
             if not url:
-                raise RuntimeError("no StreamStudio-Setup.exe asset on the latest release")
+                raise RuntimeError(f"no {update_asset_name()} asset on the latest release")
             installer = _download_installer(url)
             _APP_UPDATE_STATE["downloaded"] = str(installer)
             # Wait for downloads to finish, then re-exec via installer.
@@ -506,9 +547,24 @@ _APP_UPDATE_STATE = {"busy": False, "last_error": None, "downloaded": None}
 _APP_UPDATE_LOCK = threading.Lock()
 
 
+def _arch():
+    import platform
+    m = platform.machine().lower()
+    return "arm64" if m in ("arm64", "aarch64") else "x64"
+
+
+def update_asset_name():
+    """Name of the GitHub-release asset for THIS platform (lower-case).
+    Must match what .github/workflows/release.yml / build.py publish."""
+    if IS_WIN:
+        return "streamstudio-setup.exe"
+    plat = "macos" if IS_MAC else "linux"
+    return f"streamstudio-{plat}-{_arch()}.tar.gz"
+
+
 def latest_app_release():
-    """Return (tag_without_v, setup_download_url) for the newest GitHub release.
-    Raises on network failure — callers should catch."""
+    """Return (tag_without_v, asset_download_url_for_this_platform) for the
+    newest GitHub release. Raises on network failure — callers should catch."""
     req = urllib.request.Request(
         f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest",
         headers={"User-Agent": "StreamStudio-Updater", "Accept": "application/vnd.github+json"},
@@ -516,41 +572,84 @@ def latest_app_release():
     with urllib.request.urlopen(req, timeout=15) as r:
         data = json.load(r)
     tag = (data.get("tag_name") or "").lstrip("vV")
-    setup_url = None
+    want = update_asset_name()
+    asset_url = None
     for a in data.get("assets") or []:
-        if (a.get("name") or "").lower() == "streamstudio-setup.exe":
-            setup_url = a.get("browser_download_url")
+        if (a.get("name") or "").lower() == want:
+            asset_url = a.get("browser_download_url")
             break
-    return tag, setup_url
+    return tag, asset_url
 
 
 def app_update_available():
+    """(available, tag, url). Only True for an installed (frozen) build and
+    only once the release actually carries an asset for this platform — so the
+    banner never shows while CI is still uploading. Source checkouts update
+    with `git pull`."""
+    if not FROZEN:
+        return False, None, None
     try:
         tag, url = latest_app_release()
-        return (bool(tag) and _ver_tuple(tag) > _ver_tuple(APP_VERSION)), tag, url
+        return (bool(tag) and bool(url) and _ver_tuple(tag) > _ver_tuple(APP_VERSION)), tag, url
     except Exception:
         return False, None, None
 
 
 def _download_installer(url):
-    """Fetch the setup exe to a stable temp path. Returns the local Path."""
+    """Fetch the platform update asset to a stable temp path. Returns Path."""
     req = urllib.request.Request(url, headers={"User-Agent": "StreamStudio-Updater"})
-    dst = Path(tempfile.gettempdir()) / "StreamStudio-Setup-latest.exe"
+    suffix = ".exe" if IS_WIN else ".tar.gz"
+    dst = Path(tempfile.gettempdir()) / f"StreamStudio-update-latest{suffix}"
     with urllib.request.urlopen(req, timeout=600) as r, open(dst, "wb") as f:
         shutil.copyfileobj(r, f)
     return dst
 
 
 def _launch_installer_and_exit(installer_path):
-    """Spawn the silent installer detached and quit — the installer will close
-    the current process cleanly if it needs to, replace files, then use the
-    [Run] section in installer.iss to re-launch with --autostart."""
-    args = [str(installer_path),
-            "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART",
-            "/TASKS=startup,desktopicon"]
-    # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP so it survives our exit.
-    DETACHED = 0x00000008 | 0x00000200
-    subprocess.Popen(args, close_fds=True, creationflags=DETACHED | NO_WINDOW)
+    """Apply the downloaded update and quit this process.
+
+    Windows: run the Inno Setup installer silently; it closes us, replaces the
+    files and re-launches via its [Run] section (--autostart).
+    macOS/Linux: unpack the tar.gz to a staging dir, then hand off to a tiny
+    shell script that waits for this PID to exit, copies the new files over the
+    install dir and relaunches. Nothing is touched until the archive has been
+    extracted and verified.
+    """
+    if IS_WIN:
+        args = [str(installer_path),
+                "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART",
+                "/TASKS=startup,desktopicon"]
+        # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP so it survives our exit.
+        DETACHED = 0x00000008 | 0x00000200
+        subprocess.Popen(args, close_fds=True, creationflags=DETACHED | NO_WINDOW)
+        time.sleep(0.5)
+        os._exit(0)
+
+    import tarfile
+    install_dir = EXE_DIR
+    if not os.access(install_dir, os.W_OK):
+        raise RuntimeError(f"{install_dir} is not writable — update manually from the Releases page")
+    stage = DATA_DIR / "update-stage"
+    shutil.rmtree(stage, ignore_errors=True)
+    stage.mkdir(parents=True, exist_ok=True)
+    with tarfile.open(installer_path) as t:
+        t.extractall(stage)
+    exe_name = "StreamStudio"
+    roots = [d for d in stage.iterdir() if d.is_dir() and (d / exe_name).exists()]
+    if not roots:
+        raise RuntimeError("update archive did not contain StreamStudio/")
+    new_root = roots[0]
+    script = DATA_DIR / "apply-update.sh"
+    script.write_text(
+        "#!/bin/sh\n"
+        f"while kill -0 {os.getpid()} 2>/dev/null; do sleep 0.5; done\n"
+        f'cp -a "{new_root}/." "{install_dir}/" || exit 1\n'
+        f'rm -rf "{stage}"\n'
+        f'nohup "{install_dir}/{exe_name}" --autostart >/dev/null 2>&1 &\n'
+    )
+    script.chmod(0o755)
+    subprocess.Popen(["/bin/sh", str(script)], close_fds=True, start_new_session=True,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(0.5)
     os._exit(0)
 
@@ -1225,14 +1324,28 @@ def _port_open(port):
         return s.connect_ex(("127.0.0.1", port)) == 0
 
 
+_INSTANCE_LOCK_FH = None
+
+
 def _acquire_single_instance():
-    """Windows named mutex — the port check alone is racy when two launches
+    """Windows named mutex (POSIX: flock) — the port check alone is racy when two launches
     fire within 0.4 s of each other (Startup + tray click, or Startup +
     auto-updater re-exec). Returns True if this process is THE instance;
     False if another already holds the mutex.
     The mutex handle is intentionally leaked — the OS releases it on exit."""
     if os.name != "nt":
-        return True
+        # POSIX: advisory lock on a file in DATA_DIR; released by the OS on exit.
+        try:
+            import fcntl
+            DATA_DIR.mkdir(parents=True, exist_ok=True)
+            global _INSTANCE_LOCK_FH
+            _INSTANCE_LOCK_FH = open(DATA_DIR / "instance.lock", "w")
+            fcntl.flock(_INSTANCE_LOCK_FH, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return True
+        except (BlockingIOError, OSError):
+            return False
+        except Exception:
+            return True
     try:
         import ctypes
         from ctypes import wintypes
@@ -1250,6 +1363,148 @@ def _acquire_single_instance():
         return kernel32.GetLastError() != ERROR_ALREADY_EXISTS
     except Exception:
         return True  # any error — don't block startup on this best-effort check
+
+
+# ---- Chrome extension: keep a user-writable, always-current copy ------------
+# Chrome cannot auto-update an *unpacked* extension, but it CAN reload one from
+# disk. So: (1) the app refreshes DATA_DIR/chrome-extension from its bundled
+# copy whenever the contents differ, and (2) background.js polls /api/version
+# and calls chrome.runtime.reload() when the app ships a newer extension.
+# Net effect: load the extension once, it follows the app forever.
+EXT_SYNC_DIR = DATA_DIR / "chrome-extension"
+
+
+def _bundled_extension_dir():
+    for cand in (RES_DIR / "chrome-extension", EXE_DIR / "chrome-extension",
+                 Path(__file__).parent / "chrome-extension"):
+        if (cand / "manifest.json").exists():
+            return cand
+    return None
+
+
+def _tree_digest(root):
+    import hashlib
+    h = hashlib.sha256()
+    for f in sorted(p for p in root.rglob("*") if p.is_file() and not p.name.startswith(".synced")):
+        h.update(str(f.relative_to(root)).replace("\\", "/").encode())
+        h.update(f.read_bytes())
+    return h.hexdigest()
+
+
+def sync_extension():
+    """Copy the bundled extension to EXT_SYNC_DIR if it differs. Returns the
+    destination Path (or None if no bundled extension was found)."""
+    src = _bundled_extension_dir()
+    if not src:
+        return None
+    try:
+        digest = _tree_digest(src)
+        marker = EXT_SYNC_DIR / ".synced"
+        if marker.exists() and marker.read_text().strip() == digest \
+                and (EXT_SYNC_DIR / "manifest.json").exists():
+            return EXT_SYNC_DIR
+        EXT_SYNC_DIR.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(src, EXT_SYNC_DIR, dirs_exist_ok=True)   # in place: manifest never vanishes
+        keep = {str(f.relative_to(src)) for f in src.rglob("*") if f.is_file()}
+        for f in list(EXT_SYNC_DIR.rglob("*")):
+            if f.is_file() and f.name != ".synced" and str(f.relative_to(EXT_SYNC_DIR)) not in keep:
+                f.unlink(missing_ok=True)
+        marker.write_text(digest)
+    except Exception:
+        pass
+    return EXT_SYNC_DIR if (EXT_SYNC_DIR / "manifest.json").exists() else src
+
+
+def open_path(path):
+    """Reveal a folder in the OS file manager."""
+    path = str(path)
+    if IS_WIN:
+        os.startfile(path)  # noqa: S606 (Windows-only API)
+    elif IS_MAC:
+        subprocess.Popen(["open", path])
+    else:
+        subprocess.Popen(["xdg-open", path])
+
+
+@app.route("/api/extension")
+def api_extension():
+    """Where to load the Chrome extension from (Developer mode -> Load unpacked)."""
+    d = sync_extension()
+    resp = jsonify({"version": EXTENSION_VERSION, "path": str(d) if d else None})
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    return resp
+
+
+@app.route("/api/open_extension_folder", methods=["POST"])
+def api_open_extension_folder():
+    d = sync_extension()
+    if not d:
+        return jsonify({"error": "extension folder not found"}), 404
+    try:
+        open_path(d)
+    except Exception as e:
+        return jsonify({"error": str(e), "path": str(d)}), 500
+    return jsonify({"path": str(d)})
+
+
+# ---- autostart at login (cross-platform) -------------------------------------
+def _launch_command():
+    """argv that starts this app (frozen exe, or interpreter + app.py)."""
+    if FROZEN:
+        return [sys.executable]
+    exe = sys.executable
+    if IS_WIN and exe.lower().endswith("python.exe"):
+        exe = exe[:-len("python.exe")] + "pythonw.exe"      # no console window
+    return [exe, os.path.abspath(__file__)]
+
+
+def set_autostart(enable):
+    """Register/unregister the app to start (silently, --autostart) at login.
+      Windows: HKCU Run key · macOS: LaunchAgent · Linux: XDG autostart .desktop
+    The Windows installer additionally drops a Startup shortcut; the
+    single-instance guard makes the overlap harmless."""
+    cmd = _launch_command() + ["--autostart"]
+    if IS_WIN:
+        import winreg
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                             r"Software\Microsoft\Windows\CurrentVersion\Run", 0, winreg.KEY_SET_VALUE)
+        try:
+            if enable:
+                winreg.SetValueEx(key, "StreamStudio", 0, winreg.REG_SZ, subprocess.list2cmdline(cmd))
+            else:
+                try:
+                    winreg.DeleteValue(key, "StreamStudio")
+                except FileNotFoundError:
+                    pass
+        finally:
+            winreg.CloseKey(key)
+        return "HKCU Run key"
+    if IS_MAC:
+        plist = Path.home() / "Library" / "LaunchAgents" / "com.streamstudio.app.plist"
+        if enable:
+            plist.parent.mkdir(parents=True, exist_ok=True)
+            args = "".join(f"<string>{a}</string>" for a in cmd)
+            plist.write_text(
+                '<?xml version="1.0" encoding="UTF-8"?>\n'
+                '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
+                '<plist version="1.0"><dict>'
+                '<key>Label</key><string>com.streamstudio.app</string>'
+                f'<key>ProgramArguments</key><array>{args}</array>'
+                '<key>RunAtLoad</key><true/>'
+                '</dict></plist>\n')
+        else:
+            plist.unlink(missing_ok=True)
+        return str(plist)
+    desk = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "autostart" / "stream-studio.desktop"
+    if enable:
+        desk.parent.mkdir(parents=True, exist_ok=True)
+        desk.write_text(
+            "[Desktop Entry]\nType=Application\nName=Stream Studio\n"
+            f"Exec={' '.join(shlex.quote(a) for a in cmd)}\n"
+            "X-GNOME-Autostart-enabled=true\nTerminal=false\n")
+    else:
+        desk.unlink(missing_ok=True)
+    return str(desk)
 
 
 # ---- silent yt-dlp auto-updater --------------------------------------------
@@ -1380,6 +1635,15 @@ if __name__ == "__main__":
     port = 5006
     autostart = "--autostart" in sys.argv  # launched at login -> stay quiet
 
+    # One-shot helpers (no server): `StreamStudio --enable-autostart` etc.
+    if "--enable-autostart" in sys.argv or "--disable-autostart" in sys.argv:
+        on = "--enable-autostart" in sys.argv
+        print(("Enabled" if on else "Disabled") + " autostart via " + set_autostart(on))
+        sys.exit(0)
+    if "--print-extension-path" in sys.argv:
+        print(sync_extension() or "")
+        sys.exit(0)
+
     # Single instance: kernel mutex first (rock solid, races the port bind
     # cleanly), port check as a fallback in case the mutex API failed.
     if not _acquire_single_instance():
@@ -1393,6 +1657,9 @@ if __name__ == "__main__":
 
     # Run the web server in the background.
     threading.Thread(target=_serve, args=(port,), daemon=True).start()
+
+    # Keep the user-writable extension copy current (cheap hash compare).
+    threading.Thread(target=sync_extension, daemon=True).start()
 
     # Silent yt-dlp auto-updater — the primary defence against 403 errors when
     # YouTube changes their site. Runs in every mode (tray, headless, dev).
@@ -1483,6 +1750,7 @@ if __name__ == "__main__":
             menu=Menu(
                 MenuItem("Open Stream Studio", _open, default=True),
                 MenuItem(_update_text, _do_update, enabled=_update_enabled),
+                MenuItem("Open Chrome extension folder", lambda icon, item: open_path(sync_extension() or EXE_DIR)),
                 MenuItem("Quit", _quit),
             ),
         )

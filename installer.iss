@@ -2,7 +2,7 @@
 ; Produces a classic "Next -> Next -> Finish" Windows installer.
 
 #define AppName "Stream Studio"
-#define AppVersion "1.6.6"
+#define AppVersion "1.7.0"
 #define AppPublisher "Stream Studio"
 #define AppExe "StreamStudio.exe"
 ; PyInstaller output dir. Overridable from the command line

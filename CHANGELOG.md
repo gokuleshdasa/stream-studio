@@ -1,6 +1,54 @@
 # Stream Studio — Changelog
 
-## 1.6.6 — 2026-10-01
+## 1.7.0 — 2026-10-01
+
+Everything keeps itself up to date, and it now runs on Windows, macOS and Linux.
+(Also contains the unreleased 1.6.6 fix below.)
+
+**Chrome extension 2.0.2 → 2.1.0**
+- **Fix: the on-video Download button did nothing.** The drag code captured the
+  pointer on press, which retargeted the click away from the "Download" label
+  (✕ worked only because the drag handler skips buttons). The pointer is now
+  captured only after a real drag (>3 px) begins.
+- **Self-updating.** Chrome cannot auto-update an *unpacked* extension, but it
+  can reload one. The app keeps the extension files current; `background.js`
+  asks `GET /api/extension` (fast, no internet lookups) at most every 30 min and
+  calls `chrome.runtime.reload()` when the app ships a newer version. One
+  reload per advertised version (loop guard). No new permissions.
+  *Users on 2.0.x must reload the extension manually once to get this.*
+
+**App 1.6.5 → 1.7.0**
+- **New: always-current extension folder.** `sync_extension()` copies the bundled
+  extension to a user-writable `DATA_DIR/chrome-extension` (hash-compared, at
+  every start). Load *that* folder in Chrome. Tray → "Open Chrome extension
+  folder", `GET /api/extension`, `POST /api/open_extension_folder`,
+  `StreamStudio --print-extension-path`.
+- **yt-dlp updates now also refresh `yt-dlp-ejs`** (the YouTube JS-challenge
+  solver) via the same hot-swap override. Binary deps (curl_cffi, brotli,
+  ffmpeg, deno) ride app releases. Override finder generalised to
+  `OVERRIDE_PKGS = (yt_dlp, yt_dlp_ejs)`; self-heal removes both on failure.
+- **Cross-platform runtime** (`app.py`): per-OS data dir (`DATA_DIR`), `ffmpeg`/
+  `deno` name resolution without `.exe` + PATH fallback, POSIX single-instance
+  lock (`flock`), `--enable-autostart` / `--disable-autostart` (Windows Run key,
+  macOS LaunchAgent, Linux XDG autostart).
+- **Cross-platform app self-update.** Windows unchanged (silent Inno installer).
+  macOS/Linux download `StreamStudio-<macos|linux>-<arch>.tar.gz` from the latest
+  release, verify it, and a small shell script swaps files after the process
+  exits and relaunches. Banner only appears once the release actually carries
+  an asset for this OS, and never for source checkouts (`git pull` instead).
+- **New `build.py`**: one cross-platform build (version-sync check → ffmpeg/deno
+  from `imageio-ffmpeg`/`deno` wheels if not in `build_assets/` → PyInstaller
+  `--onedir` → Inno Setup or tar.gz). `update-and-rebuild.bat` now just refreshes
+  deps and calls it.
+- **New `.github/workflows/release.yml`**: pushing a `v*` tag builds all three
+  OSes and publishes the release with notes taken from this file.
+- **New `HANDOFF.md`** — full developer handoff. BUILD / CONTRIBUTING / README /
+  READ ME FIRST rewritten to match reality.
+- `Start Stream Studio.sh` for macOS/Linux source runs.
+- macOS/Linux builds are **new and only exercised via CI**, not yet field-tested
+  (see HANDOFF.md → "Known gaps").
+
+## 1.6.6 — 2026-10-01 (git commit only; never built or released — shipped inside 1.7.0)
 
 Fix: the Chrome extension's on-video Download button did nothing when clicked.
 
