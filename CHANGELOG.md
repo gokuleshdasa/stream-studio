@@ -1,5 +1,15 @@
 # Stream Studio — Changelog
 
+## 1.6.6 — 2026-10-01
+
+Fix: the Chrome extension's on-video Download button did nothing when clicked.
+
+- **Hover button click works again.** The drag code captured the pointer on
+  press, which retargeted the click away from the Download label. The pointer
+  is now captured only once a real drag (>3px) starts.
+- Extension version 2.0.2 → 2.0.3; app EXTENSION_VERSION mirror updated.
+- installer AppVersion 1.6.5 → 1.6.6.
+
 ## 1.6.5 — 2026-09-24
 
 Chrome extension: drag the button anywhere, close it per video.

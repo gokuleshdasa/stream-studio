@@ -117,13 +117,17 @@
       startX = ev.clientX; startY = ev.clientY;
       const r = el.getBoundingClientRect();
       baseL = r.left; baseT = r.top;
-      handleEl.style.cursor = "grabbing";
-      handleEl.setPointerCapture(ev.pointerId);
     });
     handleEl.addEventListener("pointermove", ev => {
       if (!dragging) return;
       const dx = ev.clientX - startX, dy = ev.clientY - startY;
       if (!moved && Math.abs(dx) + Math.abs(dy) < 3) return;
+      if (!moved) {
+        // Capture only once a real drag begins — capturing on pointerdown
+        // retargets the click to the container and breaks the Download label.
+        handleEl.style.cursor = "grabbing";
+        try { handleEl.setPointerCapture(ev.pointerId); } catch {}
+      }
       moved = true;
       const left = clamp(baseL + dx, 4, window.innerWidth - el.offsetWidth - 4);
       const top  = clamp(baseT + dy, 4, window.innerHeight - el.offsetHeight - 4);
