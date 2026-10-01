@@ -1,8 +1,8 @@
 # Stream Studio — Developer Handoff
 
 > Read this first. It is meant to let a developer who has never seen the project
-> understand, run, change, release and debug it. Last updated for **app 1.7.0 /
-> extension 2.1.0** (2026-10-01).
+> understand, run, change, release and debug it. Last updated for **app 1.7.1 /
+> extension 2.2.0** (2026-10-01).
 
 ## 1. What it is
 
@@ -131,6 +131,19 @@ Known gaps: no code signing/notarization (macOS Gatekeeper: right-click → Open
 or `xattr -dr com.apple.quarantine StreamStudio`); no `.app` bundle or `.deb`/
 AppImage; Intel-Mac and Linux-arm64 builds need extra CI matrix entries
 (`macos-13`/`ubuntu-24.04-arm`); Windows ARM not built.
+
+### Extension compatibility
+Chromium MV3 browsers — Chrome, Edge, Brave, Opera, Vivaldi — on Windows, macOS,
+Linux (**Load unpacked**). Content script runs on all http(s) pages and frames;
+the hover button is on by default (`extended !== false`), uses `position:fixed`,
+detects media via `composedPath()`/`elementsFromPoint()`, and moves into the
+fullscreen element. All calls to `127.0.0.1` go through `background.js`
+(not the page origin) to avoid CORS/Local-Network-Access blocks.
+**Not supported: Firefox** (needs `background.scripts` + a signed/temporary add-on;
+Chrome rejects the extra manifest keys on older versions). Pages where a content
+script cannot run: `chrome://`, Web Store, `file://` unless "Allow access to file URLs".
+DRM (Widevine/EME) streams cannot be downloaded by yt-dlp — the button will fire
+but the download fails.
 
 ## 6. HTTP API (localhost:5006)
 

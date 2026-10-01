@@ -6,7 +6,7 @@
 (function () {
   if (window.__ss_loaded) return; window.__ss_loaded = true;
   const TOP = window.top === window;
-  const DEFAULTS = { port: "5006", collapseDelay: 20, extended: false, types: { video: true, audio: true, image: true } };
+  const DEFAULTS = { port: "5006", collapseDelay: 20, extended: true, types: { video: true, audio: true, image: true } };
   let S = { ...DEFAULTS };
   const base = () => `http://127.0.0.1:${S.port}`;
 
@@ -15,7 +15,7 @@
       chrome.storage.local.get(["port", "collapseDelay", "extended", "types"], d => {
         S.port = d.port || DEFAULTS.port;
         const n = +d.collapseDelay; S.collapseDelay = Number.isFinite(n) && n > 0 ? n : DEFAULTS.collapseDelay;
-        S.extended = !!d.extended;
+        S.extended = d.extended !== false;   // on by default; popup can switch it off
         S.types = Object.assign({}, DEFAULTS.types, d.types || {});
         cb && cb();
       });
@@ -25,7 +25,7 @@
     chrome.storage.onChanged.addListener(ch => {
       if (ch.port) S.port = ch.port.newValue || DEFAULTS.port;
       if (ch.types) S.types = Object.assign({}, DEFAULTS.types, ch.types.newValue || {});
-      if (ch.extended) { S.extended = !!ch.extended.newValue; if (TOP) (S.extended ? enableHover() : disableHover()); }
+      if (ch.extended) { S.extended = ch.extended.newValue !== false; (S.extended ? enableHover() : disableHover()); }
     });
   } catch {}
 
@@ -43,7 +43,7 @@
   }
 
   function toast(text) {
-    if (!TOP) return;
+    if (!document.body) return;
     const t = document.createElement("div"); t.className = "ss-toast"; t.textContent = text;
     document.body.appendChild(t); requestAnimationFrame(() => t.classList.add("in"));
     setTimeout(() => { t.classList.remove("in"); setTimeout(() => t.remove(), 300); }, 3500);
@@ -205,7 +205,10 @@
       return /(playlist|channel|videos?\/?$|user\/|profile|category|tag\/|search)/i.test(path + u.search);
     } catch { return false; }
   }
-  async function supported(u) { try { const r = await fetch(`${base()}/api/supported?u=${encodeURIComponent(u)}`, { cache: "no-store" }); return (await r.json()).supported === true; } catch { return false; } }
+  // Asked via the background worker: a content-script fetch to 127.0.0.1 is made with
+  // the PAGE's origin and can be blocked by CORS / Chrome's local-network-access
+  // prompt on public sites; the worker (host_permissions) is not subject to that.
+  async function supported(u) { const r = await send("supported", { url: u }); return !!(r && r.supported); }
   let lastHref = "";
   async function pillCheck() {
     if (!TOP) return;
@@ -238,14 +241,27 @@
   }
 
   // ---- hover button ----
+  // Works on every page and in every frame (embedded players too). Design notes:
+  //  • position:fixed + viewport coordinates, so scrolling, nested scroll
+  //    containers and a saved drag position all use the same coordinate system.
+  //  • The media element is found through composedPath() (pierces shadow DOM)
+  //    and elementsFromPoint() (sees videos covered by a transparent player
+  //    overlay, which is how most players are built).
+  //  • In fullscreen only the fullscreen element's subtree is painted, so the
+  //    button is re-parented there.
   // If the user has dragged it, we STOP auto-positioning relative to the
-  // video and honour their placement (via chrome.storage.local -> hoverPos).
+  // video and honour their placement (chrome.storage.local -> hoverPos).
   // If the user has ✕'d it on this video, we don't show it at all.
-  let hoverBtn = null, hoverEl = null, hideTimer = null;
+  let hoverBtn = null, hoverEl = null, hideTimer = null, hoverEnabled = false;
   let userMovedHover = false;
   loadKV(d => { userMovedHover = !!(d && d.hoverPos); });
+  function hoverParent() { return document.fullscreenElement || document.webkitFullscreenElement || document.body || document.documentElement; }
   function ensureHoverBtn() {
-    if (hoverBtn) return hoverBtn;
+    if (hoverBtn) {
+      const p = hoverParent();
+      if (p && hoverBtn.parentNode !== p) p.appendChild(hoverBtn);
+      return hoverBtn;
+    }
     hoverBtn = document.createElement("div"); hoverBtn.id = "ss-hover";
     hoverBtn.classList.add("ss-drag-handle");
     hoverBtn.innerHTML =
@@ -255,6 +271,8 @@
       e.stopPropagation(); e.preventDefault(); if (!hoverEl) return;
       const src = hoverEl.currentSrc || hoverEl.src || "";
       const kind = hoverEl.tagName === "AUDIO" ? "audio" : "video";
+      // blob:/MediaSource streams can't be fetched from outside the page, so
+      // hand the PAGE url to the app (yt-dlp resolves it); real files download directly.
       if (/^https?:/i.test(src)) download(src, kind); else { send("openApp", { url: location.href }); toast("Opening Stream Studio…"); }
     });
     hoverBtn.querySelector(".ss-hover-x").addEventListener("click", ev => {
@@ -264,7 +282,7 @@
     });
     hoverBtn.addEventListener("mouseenter", () => clearTimeout(hideTimer));
     hoverBtn.addEventListener("mouseleave", scheduleHide);
-    document.body.appendChild(hoverBtn);
+    hoverParent().appendChild(hoverBtn);
     makeDraggable(hoverBtn, hoverBtn, "hoverPos");
     // Watch for a drag save so we flip auto-positioning off from now on.
     try {
@@ -279,17 +297,51 @@
       if (hidden) { hideHover(); return; }
       const b = ensureHoverBtn(); b.classList.add("show");
       if (userMovedHover) return; // don't fight the user's chosen spot
-      b.style.top = (window.scrollY + r.top + 12) + "px";
-      b.style.left = (window.scrollX + r.right - 12 - b.offsetWidth) + "px";
+      b.style.right = "auto"; b.style.bottom = "auto";
+      b.style.top = clamp(r.top + 12, 4, Math.max(4, window.innerHeight - b.offsetHeight - 4)) + "px";
+      b.style.left = clamp(r.right - 12 - b.offsetWidth, 4, Math.max(4, window.innerWidth - b.offsetWidth - 4)) + "px";
     });
   }
-  function scheduleHide() { hideTimer = setTimeout(hideHover, 400); }
+  function scheduleHide() { clearTimeout(hideTimer); hideTimer = setTimeout(hideHover, 700); }
   function hideHover() { if (hoverBtn) hoverBtn.classList.remove("show"); hoverEl = null; }
-  function onOver(e) { const el = e.target.closest && e.target.closest("video, audio"); if (el) { hoverEl = el; clearTimeout(hideTimer); positionHover(el); } }
-  function onOut(e) { if (e.target.closest && e.target.closest("video, audio")) scheduleHide(); }
-  function onScroll() { if (hoverEl && !userMovedHover) positionHover(hoverEl); }
-  function enableHover() { document.addEventListener("mouseover", onOver, true); document.addEventListener("mouseout", onOut, true); window.addEventListener("scroll", onScroll, true); }
-  function disableHover() { document.removeEventListener("mouseover", onOver, true); document.removeEventListener("mouseout", onOut, true); window.removeEventListener("scroll", onScroll, true); hideHover(); }
+  function isMedia(n) { return n && n.nodeType === 1 && (n.tagName === "VIDEO" || n.tagName === "AUDIO"); }
+  function mediaUnder(e) {
+    for (const n of (e.composedPath ? e.composedPath() : [e.target])) if (isMedia(n)) return n;
+    try {
+      for (const n of document.elementsFromPoint(e.clientX, e.clientY)) {
+        if (isMedia(n)) return n;
+        if (n.shadowRoot) { const v = n.shadowRoot.querySelector("video, audio"); if (v) return v; }
+      }
+    } catch {}
+    return null;
+  }
+  let lastMove = 0;
+  function onMove(e) {
+    if (hoverBtn && e.target === hoverBtn) return;
+    const now = Date.now(); if (now - lastMove < 80) return; lastMove = now;
+    const el = mediaUnder(e);
+    if (el) { hoverEl = el; clearTimeout(hideTimer); positionHover(el); }
+    else if (hoverEl) scheduleHide();
+  }
+  function onReflow() { if (hoverEl && hoverBtn && hoverBtn.classList.contains("show") && !userMovedHover) positionHover(hoverEl); }
+  function onFullscreen() { if (hoverBtn) { ensureHoverBtn(); onReflow(); } }
+  function enableHover() {
+    if (hoverEnabled) return; hoverEnabled = true;
+    document.addEventListener("mousemove", onMove, true);
+    window.addEventListener("scroll", onReflow, true);
+    window.addEventListener("resize", onReflow, true);
+    document.addEventListener("fullscreenchange", onFullscreen, true);
+    document.addEventListener("webkitfullscreenchange", onFullscreen, true);
+  }
+  function disableHover() {
+    hoverEnabled = false;
+    document.removeEventListener("mousemove", onMove, true);
+    window.removeEventListener("scroll", onReflow, true);
+    window.removeEventListener("resize", onReflow, true);
+    document.removeEventListener("fullscreenchange", onFullscreen, true);
+    document.removeEventListener("webkitfullscreenchange", onFullscreen, true);
+    hideHover();
+  }
 
   // ---- download-manager modal ----
   function fileName(u) { try { const x = new URL(u); return decodeURIComponent(x.pathname.split("/").pop() || x.hostname); } catch { return u.slice(0, 50); } }
@@ -387,7 +439,7 @@
 
   load(() => {
     reportMedia(); pillCheck();
-    if (TOP && S.extended) enableHover();
+    if (S.extended) enableHover();   // every frame, so embedded players get the button too
     setInterval(reportMedia, 3000);
     if (TOP) {
       let last = location.href;

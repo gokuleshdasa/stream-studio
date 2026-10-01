@@ -1,5 +1,29 @@
 # Stream Studio — Changelog
 
+## 1.7.1 — 2026-10-01
+
+Chrome extension 2.1.0 → 2.2.0: the video button now works on (nearly) every
+site, in every frame, on every OS.
+
+- **On by default.** The hover Download button no longer needs "Extended mode";
+  the popup toggle still switches it off.
+- **Every frame.** It used to run only in the top document, so players embedded
+  in iframes (news sites, course platforms, Vimeo/YouTube embeds…) had no button.
+- **Finds covered videos.** Detection now uses `composedPath()` + `elementsFromPoint()`
+  so videos under a transparent player overlay or inside shadow DOM are found.
+- **Fullscreen.** The button is re-parented into the fullscreen element, so it
+  stays visible there.
+- **Correct positioning.** `position:fixed` with viewport coordinates (was
+  `absolute` with page coordinates, which drifted in scrolled containers and made a
+  saved drag position land in the wrong place after scrolling).
+- **No more blocked "supported site" checks.** The corner-pill lookup now goes
+  through the background worker instead of a content-script `fetch` to
+  `127.0.0.1`, which CORS / Chrome's Local Network Access can block on public sites.
+- Verified in a browser harness: button appears over a video covered by an overlay,
+  tracks it on scroll, click → `openApp`, drag swallows the click.
+- Supported browsers: Chrome, Edge, Brave, Opera, Vivaldi (Chromium, MV3) on
+  Windows, macOS and Linux. Firefox is not supported yet (see HANDOFF §5).
+
 ## 1.7.0 — 2026-10-01
 
 Everything keeps itself up to date, and it now runs on Windows, macOS and Linux.

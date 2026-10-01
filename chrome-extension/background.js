@@ -100,6 +100,11 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
       .then(r => reply && reply(r)).catch(e => reply && reply({ error: String(e) }));
     return true;
   }
+  if (msg.type === "supported") {
+    port(p => fetch(`http://127.0.0.1:${p}/api/supported?u=${encodeURIComponent(msg.url || "")}`, { cache: "no-store" })
+      .then(r => r.json()).then(j => reply({ supported: j.supported === true })).catch(() => reply({ supported: false })));
+    return true;
+  }
   if (msg.type === "openApp") { openApp(msg.url, !!msg.batch); reply && reply({ ok: true }); return true; }
   if (msg.type === "zipBundle") {
     zipBundle(msg.items || [], msg.referer || (sender.tab && sender.tab.url), tabId)

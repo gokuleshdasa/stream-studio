@@ -20,7 +20,7 @@ function kindOf(u) { return /\.(mp3|m4a|aac|ogg|opus|flac|wav)(\?|#|$)/i.test(u)
 chrome.storage.local.get(["port", "collapseDelay", "extended", "types"], d => {
   if (d.port) $("#port").value = d.port;
   if (d.collapseDelay) $("#collapseDelay").value = d.collapseDelay;
-  $("#extended").checked = !!d.extended;
+  $("#extended").checked = d.extended !== false;
   const t = Object.assign({ video: true, audio: true, image: true }, d.types || {});
   $("#t_video").checked = t.video; $("#t_audio").checked = t.audio; $("#t_image").checked = t.image;
 });

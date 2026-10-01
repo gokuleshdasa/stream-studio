@@ -67,7 +67,7 @@
 
 /* IDM-style hover button over a media element */
 #ss-hover{
-  position:absolute; z-index:2147483600; display:none; align-items:center; gap:6px;
+  position:fixed; z-index:2147483600; display:none; align-items:center; gap:6px;
   font-family:'Roboto','Segoe UI',system-ui,sans-serif; font-size:13px; font-weight:700;
   color:#fff; padding:6px 8px 6px 14px; border-radius:10px;
   background:linear-gradient(135deg,#7c5cff,#ff5ca8);
