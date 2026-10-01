@@ -14,7 +14,9 @@ dist/
 Setup/
 
 # ---- bundled third-party binaries (downloaded at build time, see BUILD.md) ----
+build_assets/ffmpeg
 build_assets/ffmpeg.exe
+build_assets/deno
 build_assets/deno.exe
 build_assets/*.zip
 

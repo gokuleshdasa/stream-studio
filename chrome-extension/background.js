@@ -192,3 +192,43 @@ function appDownload(url, referer, title, kind) {
 function quickDownload(url, referer, title, kind) {
   return DIRECT_FILE.test(url) ? browserDownload(url) : appDownload(url, referer, title, kind);
 }
+
+// ---- self-update (unpacked extensions can't auto-update, but they CAN reload) --
+// The Stream Studio app keeps this folder's files current (installer on
+// Windows, `sync_extension()` in app.py everywhere). We just notice that the
+// app reports a newer extension version than the one running and reload
+// ourselves so Chrome re-reads the files from disk. Uses no extra permission:
+// it piggybacks on the content script's periodic messages to wake the worker.
+const SELF_VERSION = chrome.runtime.getManifest().version;
+const SELF_CHECK_MS = 30 * 60 * 1000;
+function verCmp(a, b) {
+  const pa = String(a).split(".").map(n => parseInt(n, 10) || 0);
+  const pb = String(b).split(".").map(n => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0);
+    if (d) return d;
+  }
+  return 0;
+}
+function selfUpdateCheck(force) {
+  try {
+    chrome.storage.local.get(["lastSelfCheck", "reloadedFor", "port"], async d => {
+      const now = Date.now();
+      if (!force && d.lastSelfCheck && now - d.lastSelfCheck < SELF_CHECK_MS) return;
+      chrome.storage.local.set({ lastSelfCheck: now });
+      try {
+        const r = await fetch(`http://127.0.0.1:${d.port || "5006"}/api/extension`, { cache: "no-store" });   // fast, no internet lookups
+        const v = (await r.json()).version;
+        // reloadedFor guards against a reload loop if the files on disk are
+        // not actually updated yet (we try once per advertised version).
+        if (v && verCmp(v, SELF_VERSION) > 0 && d.reloadedFor !== v) {
+          chrome.storage.local.set({ reloadedFor: v }, () => chrome.runtime.reload());
+        }
+      } catch { /* app not running — try again on the next wake-up */ }
+    });
+  } catch {}
+}
+selfUpdateCheck(false);
+chrome.runtime.onStartup.addListener(() => selfUpdateCheck(true));
+chrome.runtime.onInstalled.addListener(() => selfUpdateCheck(true));
+chrome.runtime.onMessage.addListener(() => { selfUpdateCheck(false); });

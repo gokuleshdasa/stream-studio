@@ -1,37 +1,47 @@
 # Contributing to Stream Studio
 
-Thanks for your interest! Contributions are welcome.
+Thanks for your interest! Start with **[HANDOFF.md](HANDOFF.md)** — architecture,
+update systems, release procedure and gotchas in one place.
 
 ## Getting started
 
 1. Fork and clone the repo.
 2. `pip install -r requirements.txt`
-3. Make sure `ffmpeg` is on your `PATH`.
-4. `python app.py` and open <http://127.0.0.1:5001>.
+3. FFmpeg on your `PATH` (or let `python build.py` fetch one into `build_assets/`).
+4. `python app.py` (Windows) / `./"Start Stream Studio.sh"` (macOS, Linux) →
+   <http://127.0.0.1:5006>.
+5. Chrome extension: `python app.py --print-extension-path`, then
+   `chrome://extensions` → Developer mode → **Load unpacked** → that folder.
 
 ## Project layout
 
 | Path | What |
 |---|---|
-| `app.py` | Flask backend: info, download, clip/convert pipeline, tray + self-updater |
-| `templates/index.html` | Single-page UI |
-| `static/app.js` | Frontend logic + timeline editor |
-| `static/style.css` | Styling |
-| `chrome-extension/` | Companion MV3 extension |
-| `installer.iss` | Inno Setup installer script |
-| `BUILD.md` | How to produce the exe + installer |
+| `app.py` | Flask backend, job pipeline, yt-dlp override, all auto-updaters, tray, cross-OS helpers |
+| `templates/index.html`, `static/app.js`, `static/style.css` | Vanilla-JS UI |
+| `chrome-extension/` | MV3 extension (`content.js`, `background.js`, `popup.*`) |
+| `build.py`, `installer.iss`, `.github/workflows/release.yml` | Build / package / release |
+| `CHANGELOG.md`, `BUILD.md`, `HANDOFF.md` | History, build how-to, developer handoff |
 
 ## Guidelines
 
-- Keep the UI dependency-free (vanilla JS/CSS) unless there's a strong reason.
-- Match the existing code style.
-- Test a real conversion (audio clip + a video clip) before opening a PR.
+- Keep the UI dependency-free (vanilla JS/CSS) unless there is a strong reason.
+- Match the existing code style; keep Windows, macOS and Linux working (use
+  `IS_WIN` / `IS_MAC`, `DATA_DIR`, `EXE_SUFFIX`; never hard-code `.exe` or `\`).
+- Changed anything under `chrome-extension/`? Bump **both** manifest `version`
+  and `EXTENSION_VERSION` in `app.py` — that is what makes installed extensions
+  reload themselves. `python build.py --check` verifies versions.
+- Add a `CHANGELOG.md` entry for user-visible changes.
+- Test a real conversion (audio clip + a video clip) and, for extension work,
+  the hover button on a YouTube page before opening a PR.
 - One focused change per PR; describe what and why.
 
 ## Reporting issues
 
-Open an issue with: OS version, what you did, what you expected, what happened, and any error text from the tray/console.
+Open an issue with: OS version, what you did, what you expected, what happened,
+and any error text from the tray/console.
 
 ## Scope & responsible use
 
-This project is for downloading content you have the right to use. Please don't file requests aimed at circumventing platform rules or enabling infringement.
+This project is for downloading content you have the right to use. Please don't
+file requests aimed at circumventing platform rules or enabling infringement.

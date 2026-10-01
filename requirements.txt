@@ -9,9 +9,12 @@ brotli>=1.1.0
 # Browser impersonation (Cloudflare / anti-bot). Optional but strongly wanted.
 curl_cffi>=0.7.0
 
-# Tray app (Windows background mode)
+# Tray app (Windows / macOS / Linux background mode)
 pystray
 pillow
 
-# Build tooling (to produce the .exe)
+# Build tooling (build.py): PyInstaller + per-OS static ffmpeg / deno binaries
+# pulled from PyPI wheels so the same build works on Windows, macOS and Linux.
 pyinstaller
+imageio-ffmpeg
+deno
